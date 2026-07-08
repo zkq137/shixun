@@ -1,3 +1,67 @@
+## Vue + Flask 最基础配置
+
+本项目已补齐前后端基础工程：
+
+- 后端：Flask（入口文件 [app.py](app.py)）
+- 前端：Vue3 + Vite（目录 [frontend](frontend)）
+
+### 1. 启动后端（Flask）
+
+在项目根目录执行：
+
+```bash
+pip install -r requirements.txt
+python app.py
+```
+
+后端默认地址：
+
+- http://127.0.0.1:5000/
+- http://127.0.0.1:5000/api/health
+- http://127.0.0.1:5000/api/hello
+
+### 2. 启动前端（Vue）
+
+在 [frontend](frontend) 目录执行：
+
+```bash
+npm install
+npm run dev
+```
+
+前端默认地址：
+
+- http://127.0.0.1:5173
+
+### 3. 联调说明
+
+- 前端通过 [frontend/vite.config.js](frontend/vite.config.js) 将 /api 代理到 Flask 的 5000 端口。
+- 前端页面 [frontend/src/App.vue](frontend/src/App.vue) 已内置示例请求，可直接验证联通。
+
+## HR 智能人才梯队平台基础版
+
+当前已实现基础看板页面与后端 mock 接口，覆盖以下模块：
+
+- 人才总览 KPI（员工数、关键岗位、Ready Now、高风险人数）
+- 人才九宫格分布
+- 关键岗位继任候选人
+- 流失风险预警
+- 培养计划执行进度
+
+后端接口清单：
+
+- GET /api/overview
+- GET /api/nine-box
+- GET /api/succession
+- GET /api/risks
+- GET /api/training-plans
+
+后端数据文件：
+
+- [backend/mock_data.py](backend/mock_data.py)
+
+后续可在这个基础上接入数据库与真实算法服务。
+
 主要业务流程图：展示平台从员工数据采集到人才评估、继任梯队、风险预警、培训规划和晋升决策的完整业务闭环。
 ```mermaid
 flowchart TD
