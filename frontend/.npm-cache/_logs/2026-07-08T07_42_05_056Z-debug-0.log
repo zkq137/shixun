@@ -1,0 +1,331 @@
+0 verbose cli D:\Develop\Nodejs\node.exe D:\Develop\Nodejs\node_modules\npm\bin\npm-cli.js
+1 info using npm@10.9.8
+2 info using node@v22.23.0
+3 silly config load:file:D:\Develop\Nodejs\node_modules\npm\npmrc
+4 silly config load:file:D:\Shixun\shixun\frontend\.npmrc
+5 silly config load:file:C:\Users\lenovo\.npmrc
+6 silly config load:file:D:\Develop\Nodejs\node_global\etc\npmrc
+7 verbose title npm install
+8 verbose argv "install" "--cache" ".npm-cache"
+9 verbose logfile logs-max:10 dir:D:\Shixun\shixun\frontend\.npm-cache\_logs\2026-07-08T07_42_05_056Z-
+10 verbose logfile D:\Shixun\shixun\frontend\.npm-cache\_logs\2026-07-08T07_42_05_056Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+13 silly idealTree buildDeps
+14 silly reify moves {}
+15 silly audit bulk request {
+15 silly audit   '@babel/helper-string-parser': [ '7.29.7' ],
+15 silly audit   '@babel/helper-validator-identifier': [ '7.29.7' ],
+15 silly audit   '@babel/parser': [ '7.29.7' ],
+15 silly audit   '@babel/types': [ '7.29.7' ],
+15 silly audit   '@esbuild/aix-ppc64': [ '0.21.5' ],
+15 silly audit   '@esbuild/android-arm': [ '0.21.5' ],
+15 silly audit   '@esbuild/android-arm64': [ '0.21.5' ],
+15 silly audit   '@esbuild/android-x64': [ '0.21.5' ],
+15 silly audit   '@esbuild/darwin-arm64': [ '0.21.5' ],
+15 silly audit   '@esbuild/darwin-x64': [ '0.21.5' ],
+15 silly audit   '@esbuild/freebsd-arm64': [ '0.21.5' ],
+15 silly audit   '@esbuild/freebsd-x64': [ '0.21.5' ],
+15 silly audit   '@esbuild/linux-arm': [ '0.21.5' ],
+15 silly audit   '@esbuild/linux-arm64': [ '0.21.5' ],
+15 silly audit   '@esbuild/linux-ia32': [ '0.21.5' ],
+15 silly audit   '@esbuild/linux-loong64': [ '0.21.5' ],
+15 silly audit   '@esbuild/linux-mips64el': [ '0.21.5' ],
+15 silly audit   '@esbuild/linux-ppc64': [ '0.21.5' ],
+15 silly audit   '@esbuild/linux-riscv64': [ '0.21.5' ],
+15 silly audit   '@esbuild/linux-s390x': [ '0.21.5' ],
+15 silly audit   '@esbuild/linux-x64': [ '0.21.5' ],
+15 silly audit   '@esbuild/netbsd-x64': [ '0.21.5' ],
+15 silly audit   '@esbuild/openbsd-x64': [ '0.21.5' ],
+15 silly audit   '@esbuild/sunos-x64': [ '0.21.5' ],
+15 silly audit   '@esbuild/win32-arm64': [ '0.21.5' ],
+15 silly audit   '@esbuild/win32-ia32': [ '0.21.5' ],
+15 silly audit   '@esbuild/win32-x64': [ '0.21.5' ],
+15 silly audit   '@jridgewell/sourcemap-codec': [ '1.5.5' ],
+15 silly audit   '@rollup/rollup-android-arm-eabi': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-android-arm64': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-darwin-arm64': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-darwin-x64': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-freebsd-arm64': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-freebsd-x64': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-linux-arm-gnueabihf': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-linux-arm-musleabihf': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-linux-arm64-gnu': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-linux-arm64-musl': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-linux-loong64-gnu': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-linux-loong64-musl': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-linux-ppc64-gnu': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-linux-ppc64-musl': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-linux-riscv64-gnu': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-linux-riscv64-musl': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-linux-s390x-gnu': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-linux-x64-gnu': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-linux-x64-musl': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-openbsd-x64': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-openharmony-arm64': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-win32-arm64-msvc': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-win32-ia32-msvc': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-win32-x64-gnu': [ '4.62.2' ],
+15 silly audit   '@rollup/rollup-win32-x64-msvc': [ '4.62.2' ],
+15 silly audit   '@types/estree': [ '1.0.9' ],
+15 silly audit   '@vitejs/plugin-vue': [ '5.2.4' ],
+15 silly audit   '@vue/compiler-core': [ '3.5.39' ],
+15 silly audit   '@vue/compiler-dom': [ '3.5.39' ],
+15 silly audit   '@vue/compiler-sfc': [ '3.5.39' ],
+15 silly audit   '@vue/compiler-ssr': [ '3.5.39' ],
+15 silly audit   '@vue/reactivity': [ '3.5.39' ],
+15 silly audit   '@vue/runtime-core': [ '3.5.39' ],
+15 silly audit   '@vue/runtime-dom': [ '3.5.39' ],
+15 silly audit   '@vue/server-renderer': [ '3.5.39' ],
+15 silly audit   '@vue/shared': [ '3.5.39' ],
+15 silly audit   csstype: [ '3.2.3' ],
+15 silly audit   entities: [ '7.0.1' ],
+15 silly audit   esbuild: [ '0.21.5' ],
+15 silly audit   'estree-walker': [ '2.0.2' ],
+15 silly audit   fsevents: [ '2.3.3' ],
+15 silly audit   'magic-string': [ '0.30.21' ],
+15 silly audit   nanoid: [ '3.3.15' ],
+15 silly audit   picocolors: [ '1.1.1' ],
+15 silly audit   postcss: [ '8.5.16' ],
+15 silly audit   rollup: [ '4.62.2' ],
+15 silly audit   'source-map-js': [ '1.2.1' ],
+15 silly audit   vite: [ '5.4.21' ],
+15 silly audit   vue: [ '3.5.39' ]
+15 silly audit }
+16 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\fsevents
+17 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\fsevents' ]
+18 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-win32-ia32-msvc
+19 silly reify mark deleted [
+19 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-win32-ia32-msvc'
+19 silly reify ]
+20 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-win32-arm64-msvc
+21 silly reify mark deleted [
+21 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-win32-arm64-msvc'
+21 silly reify ]
+22 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-openharmony-arm64
+23 silly reify mark deleted [
+23 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-openharmony-arm64'
+23 silly reify ]
+24 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-openbsd-x64
+25 silly reify mark deleted [
+25 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-openbsd-x64'
+25 silly reify ]
+26 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-linux-x64-musl
+27 silly reify mark deleted [
+27 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-linux-x64-musl'
+27 silly reify ]
+28 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-linux-x64-gnu
+29 silly reify mark deleted [
+29 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-linux-x64-gnu'
+29 silly reify ]
+30 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-linux-s390x-gnu
+31 silly reify mark deleted [
+31 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-linux-s390x-gnu'
+31 silly reify ]
+32 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-linux-riscv64-musl
+33 silly reify mark deleted [
+33 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-linux-riscv64-musl'
+33 silly reify ]
+34 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-linux-riscv64-gnu
+35 silly reify mark deleted [
+35 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-linux-riscv64-gnu'
+35 silly reify ]
+36 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-linux-ppc64-musl
+37 silly reify mark deleted [
+37 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-linux-ppc64-musl'
+37 silly reify ]
+38 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-linux-ppc64-gnu
+39 silly reify mark deleted [
+39 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-linux-ppc64-gnu'
+39 silly reify ]
+40 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-linux-loong64-musl
+41 silly reify mark deleted [
+41 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-linux-loong64-musl'
+41 silly reify ]
+42 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-linux-loong64-gnu
+43 silly reify mark deleted [
+43 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-linux-loong64-gnu'
+43 silly reify ]
+44 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-linux-arm64-musl
+45 silly reify mark deleted [
+45 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-linux-arm64-musl'
+45 silly reify ]
+46 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-linux-arm64-gnu
+47 silly reify mark deleted [
+47 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-linux-arm64-gnu'
+47 silly reify ]
+48 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-linux-arm-musleabihf
+49 silly reify mark deleted [
+49 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-linux-arm-musleabihf'
+49 silly reify ]
+50 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-linux-arm-gnueabihf
+51 silly reify mark deleted [
+51 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-linux-arm-gnueabihf'
+51 silly reify ]
+52 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-freebsd-x64
+53 silly reify mark deleted [
+53 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-freebsd-x64'
+53 silly reify ]
+54 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-freebsd-arm64
+55 silly reify mark deleted [
+55 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-freebsd-arm64'
+55 silly reify ]
+56 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-darwin-x64
+57 silly reify mark deleted [
+57 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-darwin-x64'
+57 silly reify ]
+58 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-darwin-arm64
+59 silly reify mark deleted [
+59 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-darwin-arm64'
+59 silly reify ]
+60 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-android-arm64
+61 silly reify mark deleted [
+61 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-android-arm64'
+61 silly reify ]
+62 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@rollup\rollup-android-arm-eabi
+63 silly reify mark deleted [
+63 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@rollup\\rollup-android-arm-eabi'
+63 silly reify ]
+64 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\win32-ia32
+65 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\win32-ia32' ]
+66 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\win32-arm64
+67 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\win32-arm64' ]
+68 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\sunos-x64
+69 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\sunos-x64' ]
+70 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\openbsd-x64
+71 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\openbsd-x64' ]
+72 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\netbsd-x64
+73 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\netbsd-x64' ]
+74 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\linux-x64
+75 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\linux-x64' ]
+76 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\linux-s390x
+77 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\linux-s390x' ]
+78 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\linux-riscv64
+79 silly reify mark deleted [
+79 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\linux-riscv64'
+79 silly reify ]
+80 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\linux-ppc64
+81 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\linux-ppc64' ]
+82 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\linux-mips64el
+83 silly reify mark deleted [
+83 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\linux-mips64el'
+83 silly reify ]
+84 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\linux-loong64
+85 silly reify mark deleted [
+85 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\linux-loong64'
+85 silly reify ]
+86 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\linux-ia32
+87 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\linux-ia32' ]
+88 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\linux-arm64
+89 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\linux-arm64' ]
+90 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\linux-arm
+91 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\linux-arm' ]
+92 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\freebsd-x64
+93 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\freebsd-x64' ]
+94 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\freebsd-arm64
+95 silly reify mark deleted [
+95 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\freebsd-arm64'
+95 silly reify ]
+96 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\darwin-x64
+97 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\darwin-x64' ]
+98 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\darwin-arm64
+99 silly reify mark deleted [
+99 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\darwin-arm64'
+99 silly reify ]
+100 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\android-x64
+101 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\android-x64' ]
+102 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\android-arm64
+103 silly reify mark deleted [
+103 silly reify   'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\android-arm64'
+103 silly reify ]
+104 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\android-arm
+105 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\android-arm' ]
+106 verbose reify failed optional dependency D:\Shixun\shixun\frontend\node_modules\@esbuild\aix-ppc64
+107 silly reify mark deleted [ 'D:\\Shixun\\shixun\\frontend\\node_modules\\@esbuild\\aix-ppc64' ]
+108 http fetch POST 404 https://registry.npmmirror.com/-/npm/v1/security/advisories/bulk 645ms
+109 silly audit bulk request failed [object Object]
+110 http fetch POST 404 https://registry.npmmirror.com/-/npm/v1/security/audits/quick 362ms
+111 verbose audit error HttpErrorGeneral: 404 Not Found - POST https://registry.npmmirror.com/-/npm/v1/security/audits/quick - [NOT_IMPLEMENTED] /-/npm/v1/security/* not implemented yet
+111 verbose audit error     at D:\Develop\Nodejs\node_modules\npm\node_modules\npm-registry-fetch\lib\check-response.js:103:15
+111 verbose audit error     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+111 verbose audit error     at async [getReport] (D:\Develop\Nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\audit-report.js:336:21)
+111 verbose audit error     at async AuditReport.run (D:\Develop\Nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\audit-report.js:106:19)
+111 verbose audit error     at async Arborist.reify (D:\Develop\Nodejs\node_modules\npm\node_modules\@npmcli\arborist\lib\arborist\reify.js:277:24)
+111 verbose audit error     at async Install.exec (D:\Develop\Nodejs\node_modules\npm\lib\commands\install.js:150:5)
+111 verbose audit error     at async Npm.exec (D:\Develop\Nodejs\node_modules\npm\lib\npm.js:207:9)
+111 verbose audit error     at async module.exports (D:\Develop\Nodejs\node_modules\npm\lib\cli\entry.js:74:5) {
+111 verbose audit error   headers: [Object: null prototype] {
+111 verbose audit error     server: [ 'Tengine' ],
+111 verbose audit error     date: [ 'Wed, 08 Jul 2026 07:42:38 GMT' ],
+111 verbose audit error     'content-type': [ 'application/json' ],
+111 verbose audit error     'transfer-encoding': [ 'chunked' ],
+111 verbose audit error     connection: [ 'keep-alive' ],
+111 verbose audit error     'strict-transport-security': [ 'max-age=5184000' ],
+111 verbose audit error     via: [ 'kunlun4.cn5256[,404666]' ],
+111 verbose audit error     'timing-allow-origin': [ '*' ],
+111 verbose audit error     eagleid: [ '6f1f422217834965584356031e' ],
+111 verbose audit error     'x-fetch-attempts': [ '1' ]
+111 verbose audit error   },
+111 verbose audit error   statusCode: 404,
+111 verbose audit error   code: 'E404',
+111 verbose audit error   method: 'POST',
+111 verbose audit error   uri: 'https://registry.npmmirror.com/-/npm/v1/security/audits/quick',
+111 verbose audit error   body: {
+111 verbose audit error     error: '[NOT_IMPLEMENTED] /-/npm/v1/security/* not implemented yet'
+111 verbose audit error   },
+111 verbose audit error   pkgid: undefined
+111 verbose audit error }
+112 silly audit error [object Object]
+113 silly audit report null
+114 silly ADD
+115 silly ADD
+116 silly ADD
+117 silly ADD
+118 silly ADD
+119 silly ADD
+120 silly ADD
+121 silly ADD
+122 silly ADD
+123 silly ADD
+124 silly ADD
+125 silly ADD
+126 silly ADD
+127 silly ADD
+128 silly ADD
+129 silly ADD
+130 silly ADD
+131 silly ADD
+132 silly ADD
+133 silly ADD
+134 silly ADD
+135 silly ADD
+136 silly ADD
+137 silly ADD
+138 silly ADD
+139 silly ADD
+140 silly ADD
+141 silly ADD
+142 silly ADD
+143 silly ADD
+144 silly ADD
+145 silly ADD
+146 silly ADD
+147 silly ADD
+148 silly ADD
+149 silly ADD
+150 silly ADD
+151 silly ADD
+152 silly ADD
+153 silly ADD
+154 silly ADD
+155 silly ADD
+156 silly ADD
+157 silly ADD
+158 silly ADD
+159 silly ADD
+160 verbose cwd D:\Shixun\shixun\frontend
+161 verbose os Windows_NT 10.0.22631
+162 verbose node v22.23.0
+163 verbose npm  v10.9.8
+164 verbose exit 0
+165 info ok
