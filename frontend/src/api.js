@@ -27,3 +27,7 @@ export async function getDashboardData() {
     training
   }
 }
+
+export async function getRiskAlerts() {
+  return fetchJson('/api/risks')
+}
