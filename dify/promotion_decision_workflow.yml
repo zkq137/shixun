@@ -1,0 +1,372 @@
+﻿app:
+  description: 基于真实人才数据库的晋升决策辅助工作流。按候选人采集、标准配置、多候选人对比、建议生成、审核反馈的流程，读取岗位要求和候选人池，输出可解释晋升建议。
+  icon: 📈
+  icon_background: '#E0F2FE'
+  icon_type: emoji
+  mode: workflow
+  name: 晋升决策辅助Agent
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/deepseek:0.0.19@5b68617c637b62d31e7f33a9f5677b76e88f81868fb04a728e208588564b72ea
+    version: null
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: hjlarry/database:0.0.6@534bc26cf5bc4ff6b5557457452287ccc71f00eef9378784c4f43ca49954ca2f
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions: [.JPG, .JPEG, .PNG, .GIF, .WEBP, .SVG]
+      allowed_file_types: [image]
+      allowed_file_upload_methods: [local_file, remote_url]
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods: [local_file, remote_url]
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data: {isInIteration: false, isInLoop: false, sourceType: start, targetType: tool}
+      id: start-to-position-profile
+      source: start_node
+      sourceHandle: source
+      target: position_profile_query
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, isInLoop: false, sourceType: tool, targetType: tool}
+      id: position-profile-to-candidate-pool
+      source: position_profile_query
+      sourceHandle: source
+      target: candidate_pool_query
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, isInLoop: false, sourceType: tool, targetType: llm}
+      id: candidate-pool-to-analysis
+      source: candidate_pool_query
+      sourceHandle: source
+      target: promotion_llm
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data: {isInIteration: false, isInLoop: false, sourceType: llm, targetType: end}
+      id: analysis-to-end
+      source: promotion_llm
+      sourceHandle: source
+      target: end_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        desc: HR 输入目标岗位、晋升规则；部门经理补充岗位需求和评价口径。候选人数据由数据库节点自动读取。
+        selected: false
+        title: 输入晋升任务
+        type: start
+        variables:
+        - default: 信息技术总监
+          hint: 必须和 position_profile.position_name 完全一致，例如 信息技术总监、研发经理、销售经理
+          label: 目标晋升岗位
+          max_length: 100
+          options: []
+          placeholder: 输入目标岗位名称
+          required: true
+          type: text-input
+          variable: target_position
+        - default: ''
+          hint: HR 可输入硬性规则、红线条件、优先级，例如绩效低于4暂缓、必须完成核心培训等
+          label: HR 晋升规则
+          max_length: 4000
+          options: []
+          placeholder: 可留空
+          required: false
+          type: paragraph
+          variable: promotion_rule
+        - default: ''
+          hint: 部门经理可输入岗位核心需求、团队缺口、人工评价和特殊关注点
+          label: 部门经理评价
+          max_length: 4000
+          options: []
+          placeholder: 可留空
+          required: false
+          type: paragraph
+          variable: manager_comment
+        - default: HR
+          hint: 当前只读版不会写入数据库，仅用于报告中的发起人字段
+          label: 发起人
+          max_length: 64
+          options: []
+          placeholder: 例如 HR、张三
+          required: false
+          type: text-input
+          variable: created_by
+      height: 246
+      id: start_node
+      position: {x: 80, y: 220}
+      positionAbsolute: {x: 80, y: 220}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 从 position_profile 读取目标岗位的职级、核心技能、培训、绩效和任职要求。
+        isInIteration: false
+        isInLoop: false
+        is_team_authorization: true
+        output_schema: null
+        paramSchemas: []
+        params: {db_uri: '', format: '', query: ''}
+        provider_id: hjlarry/database/database
+        provider_name: hjlarry/database/database
+        provider_type: builtin
+        selected: false
+        title: 读取目标岗位要求
+        tool_configurations:
+          format: {type: constant, value: md}
+        tool_description: This tool is used to execute SQL in an existing database.
+        tool_label: SQL Execute
+        tool_name: sql_execute
+        tool_node_version: '2'
+        tool_parameters:
+          db_uri:
+            type: mixed
+            value: ''
+          query:
+            type: mixed
+            value: |-
+              SELECT position_name, department, job_level, rank_name, position_type,
+                     core_skills, bonus_skills, required_training,
+                     performance_requirement, tenure_requirement,
+                     work_mode_requirement, is_manager, fit_description
+              FROM position_profile
+              WHERE position_name = '{{#start_node.target_position#}}'
+              LIMIT 1;
+        type: tool
+      height: 168
+      id: position_profile_query
+      position: {x: 390, y: 180}
+      positionAbsolute: {x: 390, y: 180}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 按目标岗位所属部门筛选绩效、潜力和风险达标的候选人池，并按优先级排序。
+        isInIteration: false
+        isInLoop: false
+        is_team_authorization: true
+        output_schema: null
+        paramSchemas: []
+        params: {db_uri: '', format: '', query: ''}
+        provider_id: hjlarry/database/database
+        provider_name: hjlarry/database/database
+        provider_type: builtin
+        selected: false
+        title: 筛选候选人池
+        tool_configurations:
+          format: {type: constant, value: md}
+        tool_description: This tool is used to execute SQL in an existing database.
+        tool_label: SQL Execute
+        tool_name: sql_execute
+        tool_node_version: '2'
+        tool_parameters:
+          db_uri:
+            type: mixed
+            value: ''
+          query:
+            type: mixed
+            value: |-
+              SELECT e.employee_id, e.name, e.age, e.gender, e.department,
+                     e.position_name, e.job_level, e.rank_name,
+                     e.performance_score, e.tenure_years, e.base_salary,
+                     e.compensation_factor, e.skill_tags, e.training_completed,
+                     e.potential_score, e.potential_level,
+                     e.attrition_risk_score, e.attrition_risk,
+                     e.talent_tag, e.work_mode, e.manager_id
+              FROM employee_talent_data e
+              JOIN position_profile p ON p.position_name = '{{#start_node.target_position#}}'
+              WHERE e.department = p.department
+                AND e.performance_score >= 3
+                AND e.potential_score >= 70
+                AND e.attrition_risk_score <= 60
+              ORDER BY e.performance_score DESC,
+                       e.potential_score DESC,
+                       e.attrition_risk_score ASC,
+                       e.tenure_years DESC
+              LIMIT 10;
+        type: tool
+      height: 168
+      id: candidate_pool_query
+      position: {x: 700, y: 180}
+      positionAbsolute: {x: 700, y: 180}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 整合岗位画像、候选人池、HR 规则和部门经理评价，输出多候选人对比、推荐等级、风险提示和培养方案。
+        memory:
+          enabled: false
+          role_prefix: {assistant: '', user: ''}
+          window: {enabled: false, size: 50}
+        model:
+          completion_params: {}
+          mode: chat
+          name: deepseek-v4-flash
+          provider: langgenius/deepseek/deepseek
+        prompt_template:
+        - id: system-prompt
+          role: system
+          text: |
+            你是企业人才梯队与晋升决策专家。你参与的是“晋升决策辅助 Agent”工作流。
+
+            流程要求：
+            1. 候选人数据采集：HR 提供基础规则，部门经理提供岗位需求，系统从数据库读取岗位与候选人数据。
+            2. 晋升标准配置：结合 position_profile 的硬性要求、HR 晋升规则、部门经理评价口径。
+            3. 多候选人对比：横向比较能力、经验、潜力、培训、技能、流失风险和岗位匹配。
+            4. 晋升建议生成：给出推荐等级、晋升建议、风险提示、培养计划。
+            5. 审核与反馈：输出给 HR 和部门经理人工确认；你不能替代最终人事决定。
+
+            数据字段含义：
+            - employee_talent_data：员工基础信息、当前岗位、职级、绩效、潜力、技能、培训、流失风险、人才标签。
+            - position_profile：目标岗位的部门、职级、核心技能、加分技能、必需培训、绩效/司龄/办公模式要求。
+            - promotion_decision_records：后续用于保存决策记录；当前工作流只生成记录草案，不自动写库。
+
+            评估原则：
+            - 不要编造数据库和输入中没有的事实。
+            - 如果岗位要求为空或候选人池为空，要明确指出数据不足，并给出 HR 下一步动作。
+            - 不要只挑最高分，要解释为什么推荐、为什么暂缓、风险在哪里。
+            - 建议等级只能从：立即晋升、进入观察名单、暂缓晋升、不建议晋升 中选择。
+            - 继任梯队等级只能从：第一梯队、第二梯队、观察梯队、暂不纳入 中选择。
+        - id: user-prompt
+          role: user
+          text: |
+            目标晋升岗位：{{#start_node.target_position#}}
+            发起人：{{#start_node.created_by#}}
+
+            HR 晋升规则：
+            {{#start_node.promotion_rule#}}
+
+            部门经理评价：
+            {{#start_node.manager_comment#}}
+
+            目标岗位要求查询结果：
+            {{#position_profile_query.text#}}
+
+            候选人池查询结果：
+            {{#candidate_pool_query.text#}}
+
+            请严格输出以下结构：
+
+            ## 1. 岗位标准确认
+            - 目标岗位：
+            - 所属部门：
+            - 目标职级/职等：
+            - 核心技能：
+            - 必需培训：
+            - 绩效/司龄/办公模式要求：
+            - 本次人工补充规则：
+
+            ## 2. 候选人横向对比
+            用表格输出，列包括：排名、员工ID、姓名、当前岗位、当前职级、绩效、潜力、技能匹配、培训匹配、流失风险、主要优势、主要短板。
+
+            ## 3. 晋升推荐结论
+            对每个候选人输出：员工ID/姓名、匹配分0-100、建议等级、继任梯队、决策理由、风险提示、30/60/90天培养计划。
+
+            ## 4. HR 与部门经理待确认事项
+            - 需要 HR 补充：
+            - 需要部门经理确认：
+            - 不建议自动决策的点：
+
+            ## 5. 决策记录草案
+            为“立即晋升”或“进入观察名单”的候选人生成可落库摘要，每条包含：candidate_employee_id、employee_name、target_position、match_score、recommendation、succession_level、decision_reason、risk_warning、development_plan、decision_status=draft。
+        retry_config:
+          enabled: false
+          exponential_backoff: {enabled: false, max_interval: 10000, multiplier: 2}
+          max_retries: 1
+          retry_interval: 1000
+        selected: false
+        structured_output:
+          enabled: false
+        title: 多候选人对比与晋升建议
+        type: llm
+        vision:
+          enabled: false
+      height: 132
+      id: promotion_llm
+      position: {x: 1010, y: 180}
+      positionAbsolute: {x: 1010, y: 180}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 输出岗位要求、候选人池原始查询结果和晋升建议报告，供 HR 和部门经理审核。
+        outputs:
+        - value_selector: [promotion_llm, text]
+          value_type: string
+          variable: promotion_report
+        - value_selector: [position_profile_query, text]
+          value_type: string
+          variable: position_profile_raw
+        - value_selector: [candidate_pool_query, text]
+          value_type: string
+          variable: candidate_pool_raw
+        selected: false
+        title: 输出评审材料
+        type: end
+      height: 142
+      id: end_node
+      position: {x: 1320, y: 180}
+      positionAbsolute: {x: 1320, y: 180}
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport: {x: 0, y: 80, zoom: 0.75}
+  rag_pipeline_variables: []
+
+
