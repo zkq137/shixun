@@ -41,7 +41,6 @@ async function handleLogout() {
   localStorage.removeItem('shixun_logged_in')
   localStorage.removeItem('shixun_current_view')
 }
-import { RouterView } from 'vue-router'
 </script>
 
 <template>
@@ -105,5 +104,4 @@ import { RouterView } from 'vue-router'
       <EmployeeView v-else-if="currentView === 'employee'" />
     </main>
   </div>
-  <RouterView />
 </template>

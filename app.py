@@ -3,6 +3,7 @@ import time
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 import json as _json
+from urllib.error import HTTPError
 
 from flask import Flask, jsonify, request, redirect
 from flask_cors import CORS
@@ -15,11 +16,15 @@ from backend.wechat_config import (
     WECHAT_USERINFO_URL,
     FRONTEND_SUCCESS_URL,
 )
+from backend.dify_client import run_workflow, get_dify_settings
 
 from backend.queries import (
     get_nine_box,
     get_overview,
     get_risk_alerts,
+    get_risk_overview,
+    get_risk_employees,
+    get_risk_employee_detail,
     get_succession_candidates,
     get_training_plans,
     get_employee_by_no,
@@ -77,6 +82,25 @@ def succession():
 @app.get("/api/risks")
 def risks():
     return jsonify(get_risk_alerts())
+
+
+@app.get("/api/risk-overview")
+def risk_overview():
+    return jsonify(get_risk_overview())
+
+
+@app.get("/api/risk-employees")
+def risk_employees():
+    level = request.args.get("level")
+    return jsonify(get_risk_employees(level=level))
+
+
+@app.get("/api/risk-employees/<employee_id>")
+def risk_employee_detail(employee_id):
+    result = get_risk_employee_detail(employee_id)
+    if result is None:
+        return jsonify({"error": "未找到该员工"}), 404
+    return jsonify(result)
 
 
 @app.get("/api/training-plans")
@@ -220,6 +244,61 @@ def ai_chat():
         })
     except Exception as e:
         return jsonify({"error": f"AI 服务调用失败: {str(e)}"}), 502
+
+
+@app.get("/api/dify/status")
+def dify_status():
+    settings = get_dify_settings()
+    return jsonify(
+        {
+            "baseUrl": settings["base_url"],
+            "workflowUrl": settings["workflow_url"],
+            "configured": bool(settings["api_key"]),
+        }
+    )
+
+
+@app.post("/api/risk-intervention")
+def risk_intervention():
+    data = request.get_json() or {}
+    employee_input = data.get("employeeInput") or data.get("employee_input")
+
+    if not employee_input:
+        return jsonify({"error": "缺少 employeeInput"}), 400
+
+    if isinstance(employee_input, dict):
+        employee_input = _json.dumps(employee_input, ensure_ascii=False)
+
+    workflow_inputs = {
+        "employee_input": employee_input,
+        "analysis_mode": data.get("analysisMode", "single"),
+        "high_risk_threshold": str(data.get("highRiskThreshold", 70)),
+        "medium_risk_threshold": str(data.get("mediumRiskThreshold", 40)),
+    }
+
+    try:
+        result = run_workflow(
+            workflow_inputs,
+            user=data.get("user", "risk-module"),
+            response_mode="blocking",
+        )
+        return jsonify(
+            {
+                "answer": result["text"],
+                "status": result["status"],
+                "workflow_run_id": result["workflow_run_id"],
+                "task_id": result["task_id"],
+                "outputs": result["outputs"],
+            }
+        )
+    except HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8")
+        except Exception:
+            detail = str(exc)
+        return jsonify({"error": f"Dify 调用失败：{detail}"}), 502
+    except Exception as exc:
+        return jsonify({"error": f"Dify 调用失败：{str(exc)}"}), 502
 
 
 @app.get("/api/auth/wechat/url")

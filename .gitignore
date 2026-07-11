@@ -4,3 +4,6 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 .vscode/
+.env
+.env.*
+backend/local_settings.py
