@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>微信登录成功</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: #0f0c29;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #fff;
+    }
+    .success-box {
+      text-align: center;
+      animation: fadeIn 0.5s ease;
+    }
+    .checkmark {
+      width: 60px;
+      height: 60px;
+      background: #22c55e;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+      font-size: 30px;
+    }
+    h2 { margin: 0 0 8px; font-weight: 600; }
+    p { margin: 0; color: rgba(255,255,255,0.5); font-size: 14px; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+  </style>
+</head>
+<body>
+  <div class="success-box">
+    <div class="checkmark">✓</div>
+    <h2>登录成功</h2>
+    <p>正在跳转回主页面...</p>
+  </div>
+
+  <script>
+    // 从 URL 获取 token
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+
+    if (token && window.opener) {
+      // 通过 postMessage 将 token 发送给父窗口
+      window.opener.postMessage({
+        type: 'WECHAT_LOGIN_SUCCESS',
+        token: token
+      }, window.location.origin);
+      // 短暂延迟后关闭弹窗
+      setTimeout(function() {
+        window.close();
+      }, 1500);
+    } else if (token) {
+      // 如果不是弹窗（整页跳转），重定向到主页面
+      window.location.href = '/?login_token=' + token;
+    } else {
+      document.querySelector('p').textContent = '缺少登录凭证';
+    }
+  </script>
+</body>
+</html>
