@@ -6,6 +6,7 @@
 - 前端：Vue3 + Vite（目录 [frontend](frontend)）
 
 ### 1. 启动后端（Flask）
+python -m flask run
 
 在项目根目录执行：
 
