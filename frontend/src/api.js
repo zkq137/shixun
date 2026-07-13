@@ -36,11 +36,24 @@ export async function getRiskOverview() {
   return fetchJson('/api/risk-overview')
 }
 
-export async function getRiskEmployees(level) {
-  const query = level && level !== '全部'
-    ? `?level=${encodeURIComponent(level)}`
-    : ''
-  return fetchJson(`/api/risk-employees${query}`)
+export async function getRiskEmployees(params = {}) {
+  const search = new URLSearchParams()
+
+  if (params.level && params.level !== '全部') {
+    search.set('level', params.level)
+  }
+  if (params.keyword) {
+    search.set('keyword', params.keyword)
+  }
+  if (params.page) {
+    search.set('page', params.page)
+  }
+  if (params.pageSize) {
+    search.set('pageSize', params.pageSize)
+  }
+
+  const query = search.toString()
+  return fetchJson(`/api/risk-employees${query ? `?${query}` : ''}`)
 }
 
 export async function getRiskEmployeeDetail(employeeId) {

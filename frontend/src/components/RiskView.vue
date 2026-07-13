@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { marked } from 'marked'
 import {
   generateRiskIntervention,
@@ -14,8 +14,17 @@ marked.setOptions({
   gfm: true,
 })
 
+const STORAGE_KEYS = {
+  detail: 'risk-module-detail',
+  step: 'risk-module-step',
+}
+
 const currentStep = ref('overview')
 const selectedLevel = ref('全部')
+const keywordDraft = ref('')
+const keyword = ref('')
+const currentPage = ref(1)
+const pageSize = ref(10)
 
 const overviewLoading = ref(true)
 const listLoading = ref(false)
@@ -25,6 +34,11 @@ const error = ref('')
 const interventionError = ref('')
 const interventionResult = ref('')
 const difyConfigured = ref(false)
+const loadingStage = ref('')
+const loadingSeconds = ref(0)
+
+let loadingTimer = null
+let secondsTimer = null
 
 const overviewData = ref({
   summary: {
@@ -36,16 +50,70 @@ const overviewData = ref({
     highPriority: 0,
     lastUpdated: '',
   },
+  riskDistribution: [],
+  priorityDistribution: [],
   focusEmployees: [],
   departmentDistribution: [],
+  reasonDistribution: [],
 })
 
 const listData = ref({
   total: 0,
+  page: 1,
+  pageSize: 10,
+  totalPages: 1,
+  keyword: '',
   items: [],
 })
 
 const detailData = ref(null)
+
+function saveCurrentStep(step) {
+  window.sessionStorage.setItem(STORAGE_KEYS.step, step)
+}
+
+function saveDetailData(detail) {
+  if (!detail) return
+  window.sessionStorage.setItem(STORAGE_KEYS.detail, JSON.stringify(detail))
+}
+
+function restoreDetailData() {
+  try {
+    const raw = window.sessionStorage.getItem(STORAGE_KEYS.detail)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function openStoredDetail() {
+  if (!detailData.value) return
+  currentStep.value = 'detail'
+  saveCurrentStep('detail')
+}
+
+const donutStyle = computed(() => buildDonutStyle(overviewData.value.riskDistribution))
+const priorityDonutStyle = computed(() => buildDonutStyle(overviewData.value.priorityDistribution))
+
+const pageNumbers = computed(() => {
+  const totalPages = listData.value.totalPages || 1
+  const current = listData.value.page || 1
+  const start = Math.max(1, current - 2)
+  const end = Math.min(totalPages, start + 4)
+  const pages = []
+  for (let page = start; page <= end; page += 1) {
+    pages.push(page)
+  }
+  return pages
+})
+
+const listSummaryText = computed(() => {
+  if (!listData.value.total) return '当前没有符合条件的员工'
+  const start = (listData.value.page - 1) * listData.value.pageSize + 1
+  const end = Math.min(start + listData.value.items.length - 1, listData.value.total)
+  return `当前显示 ${start}-${end} / ${listData.value.total}`
+})
 
 function renderMarkdown(text) {
   if (!text) return ''
@@ -64,13 +132,33 @@ function priorityLabel(level) {
   return level === 'high' ? '高优先级' : '常规跟进'
 }
 
-function reasonTags(value) {
-  if (Array.isArray(value)) return value
-  if (!value) return []
-  return value
-    .split('+')
-    .map((item) => item.trim())
-    .filter(Boolean)
+function buildDonutStyle(items) {
+  const total = items.reduce((sum, item) => sum + (item.value || 0), 0)
+  if (!total) {
+    return {
+      background: 'conic-gradient(#e2e8f0 0deg 360deg)',
+    }
+  }
+
+  let start = 0
+  const segments = items.map((item) => {
+    const angle = ((item.value || 0) / total) * 360
+    const end = start + angle
+    const segment = `${item.color} ${start}deg ${end}deg`
+    start = end
+    return segment
+  })
+
+  return {
+    background: `conic-gradient(${segments.join(', ')})`,
+  }
+}
+
+function resetListState() {
+  keywordDraft.value = ''
+  keyword.value = ''
+  currentPage.value = 1
+  pageSize.value = 10
 }
 
 async function loadDifyStatus() {
@@ -95,12 +183,17 @@ async function loadOverview() {
   }
 }
 
-async function loadRiskList(level = selectedLevel.value) {
+async function loadRiskList() {
   listLoading.value = true
   error.value = ''
 
   try {
-    listData.value = await getRiskEmployees(level)
+    listData.value = await getRiskEmployees({
+      level: selectedLevel.value,
+      keyword: keyword.value,
+      page: currentPage.value,
+      pageSize: pageSize.value,
+    })
   } catch (err) {
     error.value = err instanceof Error ? err.message : '风险名单加载失败'
   } finally {
@@ -110,8 +203,10 @@ async function loadRiskList(level = selectedLevel.value) {
 
 async function openList(level = '全部') {
   selectedLevel.value = level
+  resetListState()
   currentStep.value = 'list'
-  await loadRiskList(level)
+  saveCurrentStep('list')
+  await loadRiskList()
 }
 
 async function openDetail(item) {
@@ -126,6 +221,8 @@ async function openDetail(item) {
 
   try {
     detailData.value = await getRiskEmployeeDetail(item.employeeId)
+    saveDetailData(detailData.value)
+    saveCurrentStep('detail')
   } catch (err) {
     error.value = err instanceof Error ? err.message : '员工风险详情加载失败'
   } finally {
@@ -135,14 +232,72 @@ async function openDetail(item) {
 
 function backToOverview() {
   currentStep.value = 'overview'
+  saveCurrentStep('overview')
 }
 
 function backToList() {
   currentStep.value = 'list'
+  saveCurrentStep('list')
 }
 
 async function onLevelChange() {
-  await loadRiskList(selectedLevel.value)
+  currentPage.value = 1
+  await loadRiskList()
+}
+
+async function applyKeywordSearch() {
+  keyword.value = keywordDraft.value.trim()
+  currentPage.value = 1
+  await loadRiskList()
+}
+
+async function resetFilters() {
+  selectedLevel.value = '全部'
+  resetListState()
+  await loadRiskList()
+}
+
+async function changePage(page) {
+  if (page < 1 || page > listData.value.totalPages || page === currentPage.value) return
+  currentPage.value = page
+  await loadRiskList()
+}
+
+async function onPageSizeChange() {
+  currentPage.value = 1
+  await loadRiskList()
+}
+
+function startLoadingFeedback() {
+  stopLoadingFeedback()
+  loadingStage.value = '正在整理员工画像并检查输入字段...'
+  loadingSeconds.value = 0
+
+  secondsTimer = window.setInterval(() => {
+    loadingSeconds.value += 1
+  }, 1000)
+
+  loadingTimer = window.setInterval(() => {
+    const seconds = loadingSeconds.value
+    if (seconds >= 8) {
+      loadingStage.value = '结果内容较长，模型仍在生成，请再稍候...'
+    } else if (seconds >= 4) {
+      loadingStage.value = '正在调用大模型生成干预方案...'
+    } else if (seconds >= 2) {
+      loadingStage.value = '正在分析风险因素并组织建议结构...'
+    }
+  }, 500)
+}
+
+function stopLoadingFeedback() {
+  if (loadingTimer) {
+    window.clearInterval(loadingTimer)
+    loadingTimer = null
+  }
+  if (secondsTimer) {
+    window.clearInterval(secondsTimer)
+    secondsTimer = null
+  }
 }
 
 async function generatePlan() {
@@ -151,6 +306,7 @@ async function generatePlan() {
   interventionLoading.value = true
   interventionError.value = ''
   interventionResult.value = ''
+  startLoadingFeedback()
 
   try {
     const result = await generateRiskIntervention({
@@ -164,12 +320,22 @@ async function generatePlan() {
   } catch (err) {
     interventionError.value = err instanceof Error ? err.message : '干预方案生成失败'
   } finally {
+    stopLoadingFeedback()
     interventionLoading.value = false
   }
 }
 
 onMounted(async () => {
+  detailData.value = restoreDetailData()
+  const savedStep = window.sessionStorage.getItem(STORAGE_KEYS.step)
+  if (savedStep === 'detail' && detailData.value) {
+    currentStep.value = 'detail'
+  }
   await Promise.all([loadOverview(), loadDifyStatus()])
+})
+
+onBeforeUnmount(() => {
+  stopLoadingFeedback()
 })
 </script>
 
@@ -197,6 +363,7 @@ onMounted(async () => {
         class="subnav-btn"
         :class="{ active: currentStep === 'detail' }"
         :disabled="!detailData"
+        @click="openStoredDetail"
       >
         员工详情
       </button>
@@ -234,6 +401,83 @@ onMounted(async () => {
           </article>
         </section>
 
+        <section class="chart-grid">
+          <article class="panel chart-card">
+            <div class="section-head">
+              <div>
+                <h2>风险等级分布</h2>
+                <p class="section-desc">更直观看当前高、中、低风险结构。</p>
+              </div>
+            </div>
+            <div class="donut-layout">
+              <div class="donut-ring" :style="donutStyle">
+                <div class="donut-inner">
+                  <strong>{{ overviewData.summary.total }}</strong>
+                  <span>总人数</span>
+                </div>
+              </div>
+              <div class="legend-list">
+                <div v-for="item in overviewData.riskDistribution" :key="item.label" class="legend-item">
+                  <span class="legend-dot" :style="{ background: item.color }"></span>
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel chart-card">
+            <div class="section-head">
+              <div>
+                <h2>部门风险分布</h2>
+                <p class="section-desc">帮助你快速看到风险更集中的部门。</p>
+              </div>
+            </div>
+            <div class="bar-list">
+              <div
+                v-for="item in overviewData.departmentDistribution"
+                :key="item.department"
+                class="bar-item"
+              >
+                <div class="bar-head">
+                  <span>{{ item.department }}</span>
+                  <strong>{{ item.count }} 人</strong>
+                </div>
+                <div class="bar-track">
+                  <div
+                    class="bar-fill teal"
+                    :style="{ width: `${Math.max((item.count / Math.max(overviewData.summary.total, 1)) * 100, 8)}%` }"
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel chart-card">
+            <div class="section-head">
+              <div>
+                <h2>高优先级占比</h2>
+                <p class="section-desc">展示真正需要优先处理的对象比例。</p>
+              </div>
+            </div>
+            <div class="donut-layout compact-donut">
+              <div class="donut-ring small" :style="priorityDonutStyle">
+                <div class="donut-inner">
+                  <strong>{{ overviewData.summary.highPriority }}</strong>
+                  <span>高优先级</span>
+                </div>
+              </div>
+              <div class="legend-list">
+                <div v-for="item in overviewData.priorityDistribution" :key="item.label" class="legend-item">
+                  <span class="legend-dot" :style="{ background: item.color }"></span>
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
+            </div>
+          </article>
+        </section>
+
         <section class="double-grid">
           <article class="panel">
             <div class="section-head">
@@ -259,9 +503,7 @@ onMounted(async () => {
                 </div>
 
                 <div class="tag-row">
-                  <span v-for="tag in reasonTags(item.reasonTags)" :key="tag" class="reason-tag">
-                    {{ tag }}
-                  </span>
+                  <span v-for="tag in item.reasonTags" :key="tag" class="reason-tag">{{ tag }}</span>
                 </div>
 
                 <div class="meta-row">
@@ -279,19 +521,27 @@ onMounted(async () => {
           <article class="panel">
             <div class="section-head">
               <div>
-                <h2>部门分布</h2>
-                <p class="section-desc">观察风险员工目前主要集中在哪些部门。</p>
+                <h2>风险原因 TOP</h2>
+                <p class="section-desc">帮助你快速判断当前风险的主要来源。</p>
               </div>
             </div>
 
-            <div class="department-list">
+            <div class="bar-list">
               <div
-                v-for="item in overviewData.departmentDistribution"
-                :key="item.department"
-                class="department-row"
+                v-for="item in overviewData.reasonDistribution"
+                :key="item.label"
+                class="bar-item"
               >
-                <span>{{ item.department }}</span>
-                <strong>{{ item.count }} 人</strong>
+                <div class="bar-head">
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.count }}</strong>
+                </div>
+                <div class="bar-track">
+                  <div
+                    class="bar-fill orange"
+                    :style="{ width: `${Math.max((item.count / Math.max(overviewData.summary.total, 1)) * 100, 8)}%` }"
+                  ></div>
+                </div>
               </div>
             </div>
 
@@ -310,28 +560,53 @@ onMounted(async () => {
           <div class="section-head list-head">
             <div>
               <h2>风险名单</h2>
-              <p class="section-desc">支持按风险等级筛选，并进入单个员工的风险详情页。</p>
+              <p class="section-desc">支持搜索、风险等级筛选和分页浏览。</p>
             </div>
-            <div class="toolbar">
-              <label class="toolbar-label">
-                风险等级
-                <select v-model="selectedLevel" class="toolbar-select" @change="onLevelChange">
-                  <option>全部</option>
-                  <option>高风险</option>
-                  <option>中风险</option>
-                  <option>低风险</option>
-                </select>
-              </label>
-              <button type="button" class="ghost-btn" @click="backToOverview">返回总览</button>
-            </div>
+            <button type="button" class="ghost-btn" @click="backToOverview">返回总览</button>
+          </div>
+
+          <div class="toolbar rich-toolbar">
+            <label class="toolbar-label grow">
+              关键词搜索
+              <input
+                v-model="keywordDraft"
+                class="toolbar-input"
+                type="text"
+                placeholder="输入姓名、工号、部门或岗位"
+                @keyup.enter="applyKeywordSearch"
+              />
+            </label>
+
+            <label class="toolbar-label">
+              风险等级
+              <select v-model="selectedLevel" class="toolbar-select" @change="onLevelChange">
+                <option>全部</option>
+                <option>高风险</option>
+                <option>中风险</option>
+                <option>低风险</option>
+              </select>
+            </label>
+
+            <label class="toolbar-label">
+              每页条数
+              <select v-model="pageSize" class="toolbar-select" @change="onPageSizeChange">
+                <option :value="5">5</option>
+                <option :value="10">10</option>
+                <option :value="15">15</option>
+              </select>
+            </label>
+
+            <button type="button" class="primary-btn" @click="applyKeywordSearch">搜索</button>
+            <button type="button" class="ghost-btn" @click="resetFilters">重置</button>
           </div>
 
           <section v-if="listLoading" class="loading-state">风险名单加载中...</section>
           <section v-else-if="error" class="error">{{ error }}</section>
           <template v-else>
             <div class="summary-strip">
-              当前共 {{ listData.total }} 人
-              <span v-if="selectedLevel !== '全部'"> · 筛选条件：{{ selectedLevel }}</span>
+              {{ listSummaryText }}
+              <span v-if="keyword"> · 当前关键词：{{ keyword }}</span>
+              <span v-if="selectedLevel !== '全部'"> · 当前等级：{{ selectedLevel }}</span>
             </div>
 
             <div class="table-wrap">
@@ -365,6 +640,30 @@ onMounted(async () => {
                   </tr>
                 </tbody>
               </table>
+            </div>
+
+            <div class="pagination">
+              <button type="button" class="ghost-btn" :disabled="listData.page <= 1" @click="changePage(listData.page - 1)">
+                上一页
+              </button>
+              <button
+                v-for="page in pageNumbers"
+                :key="page"
+                type="button"
+                class="page-btn"
+                :class="{ active: page === listData.page }"
+                @click="changePage(page)"
+              >
+                {{ page }}
+              </button>
+              <button
+                type="button"
+                class="ghost-btn"
+                :disabled="listData.page >= listData.totalPages"
+                @click="changePage(listData.page + 1)"
+              >
+                下一页
+              </button>
             </div>
           </template>
         </section>
@@ -467,15 +766,40 @@ onMounted(async () => {
               </div>
             </article>
 
-            <article class="panel">
-              <h2>干预建议与工作流输入</h2>
-              <ol class="action-list">
-                <li v-for="action in detailData.recommendedActions" :key="action">{{ action }}</li>
+            <article class="panel suggestion-panel">
+              <div class="section-head compact-head">
+                <div>
+                  <h2>建议措施</h2>
+                  <p class="section-desc">先看系统建议，再按需生成更完整的 AI 干预方案。</p>
+                </div>
+              </div>
+
+              <ol class="action-list polished-list">
+                <li v-for="action in detailData.recommendedActions" :key="action">
+                  <span class="action-index"></span>
+                  <span>{{ action }}</span>
+                </li>
               </ol>
 
-              <div class="workflow-box">
-                <p class="block-title">Dify 输入预览</p>
-                <pre>{{ JSON.stringify(detailData.employeeInput, null, 2) }}</pre>
+              <div class="ai-capability-box">
+                <div class="ai-capability-head">
+                  <div>
+                    <p class="capability-eyebrow">AI 深度分析</p>
+                    <h3>可进一步生成个性化干预方案</h3>
+                  </div>
+                  <div class="capability-glow"></div>
+                </div>
+
+                <p class="capability-copy">
+                  点击下方按钮后，系统会结合该员工的风险等级、岗位背景和发展信息，补充更细的沟通策略与跟进建议。
+                </p>
+
+                <div class="capability-tags">
+                  <span class="capability-tag">沟通话术建议</span>
+                  <span class="capability-tag">跟进周期建议</span>
+                  <span class="capability-tag">责任人建议</span>
+                  <span class="capability-tag">保留动作补充</span>
+                </div>
               </div>
             </article>
           </section>
@@ -496,6 +820,22 @@ onMounted(async () => {
             尚未配置 Dify API Key。请先在本地完成配置，再点击“生成干预方案”。
           </section>
 
+          <section v-if="interventionLoading" class="panel progress-panel">
+            <div class="progress-top">
+              <strong>AI 正在生成干预方案</strong>
+              <span>{{ loadingSeconds }}s</span>
+            </div>
+            <p class="progress-text">{{ loadingStage }}</p>
+            <div class="progress-bar">
+              <div class="progress-bar-fill"></div>
+            </div>
+            <div class="skeleton-group">
+              <div class="skeleton-line long"></div>
+              <div class="skeleton-line"></div>
+              <div class="skeleton-line short"></div>
+            </div>
+          </section>
+
           <section v-if="interventionError" class="panel error">
             {{ interventionError }}
           </section>
@@ -504,7 +844,7 @@ onMounted(async () => {
             <div class="section-head">
               <div>
                 <h2>AI 干预方案</h2>
-                <p class="section-desc">以下内容来自你发布的 Dify 工作流。</p>
+                <p class="section-desc">以下内容来自 AI，仅供参考。</p>
               </div>
             </div>
             <div class="ai-result" v-html="renderMarkdown(interventionResult)"></div>
@@ -532,7 +872,8 @@ onMounted(async () => {
 .primary-btn,
 .ghost-btn,
 .mini-btn,
-.link-action {
+.link-action,
+.page-btn {
   border: 0;
   cursor: pointer;
   transition: all 0.2s;
@@ -552,20 +893,26 @@ onMounted(async () => {
 }
 
 .subnav-btn:disabled,
-.primary-btn:disabled {
+.primary-btn:disabled,
+.ghost-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 .kpi-grid,
 .double-grid,
-.detail-grid {
+.detail-grid,
+.chart-grid {
   display: grid;
   gap: 16px;
 }
 
 .kpi-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.chart-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .double-grid {
@@ -576,7 +923,8 @@ onMounted(async () => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.kpi-card {
+.kpi-card,
+.chart-card {
   border: 1px solid #e2e8f0;
   border-radius: 16px;
   padding: 20px;
@@ -611,7 +959,8 @@ onMounted(async () => {
 .section-desc,
 .detail-sub,
 .summary-note,
-.empty-text {
+.empty-text,
+.progress-text {
   color: #64748b;
 }
 
@@ -626,6 +975,112 @@ onMounted(async () => {
 .section-head h2,
 .detail-hero h2 {
   margin: 0 0 6px;
+}
+
+.donut-layout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.donut-ring {
+  width: 168px;
+  height: 168px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.donut-ring.small {
+  width: 140px;
+  height: 140px;
+}
+
+.donut-inner {
+  width: 102px;
+  height: 102px;
+  border-radius: 50%;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #0f172a;
+  box-shadow: inset 0 0 0 1px #e2e8f0;
+}
+
+.donut-inner strong {
+  font-size: 24px;
+}
+
+.donut-inner span {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.legend-list,
+.bar-list {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+}
+
+.legend-item,
+.bar-head,
+.progress-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+.bar-track,
+.progress-bar {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.bar-fill,
+.progress-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+}
+
+.bar-fill.teal {
+  background: linear-gradient(90deg, #0f766e, #14b8a6);
+}
+
+.bar-fill.orange {
+  background: linear-gradient(90deg, #f97316, #fb923c);
+}
+
+.progress-bar-fill {
+  width: 45%;
+  background: linear-gradient(90deg, #0f766e, #2dd4bf);
+  animation: progress-slide 1.6s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
 }
 
 .focus-grid {
@@ -742,7 +1197,8 @@ onMounted(async () => {
 
 .primary-btn,
 .ghost-btn,
-.mini-btn {
+.mini-btn,
+.page-btn {
   border-radius: 10px;
   padding: 10px 14px;
 }
@@ -764,8 +1220,26 @@ onMounted(async () => {
   padding: 8px 12px;
 }
 
+.page-btn {
+  background: #f8fafc;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+  min-width: 40px;
+}
+
+.page-btn.active {
+  background: #0f766e;
+  color: #fff;
+  border-color: #0f766e;
+}
+
 .toolbar {
   align-items: center;
+}
+
+.rich-toolbar {
+  margin-bottom: 18px;
+  flex-wrap: wrap;
 }
 
 .toolbar-label {
@@ -776,11 +1250,21 @@ onMounted(async () => {
   font-size: 14px;
 }
 
-.toolbar-select {
+.toolbar-label.grow {
+  flex: 1;
+  min-width: 240px;
+}
+
+.toolbar-select,
+.toolbar-input {
   border: 1px solid #cbd5e1;
   border-radius: 8px;
-  padding: 6px 10px;
+  padding: 8px 10px;
   background: #fff;
+}
+
+.toolbar-input {
+  width: 100%;
 }
 
 .summary-strip {
@@ -813,6 +1297,15 @@ th {
   background: #f8fafc;
 }
 
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+
 .detail-label {
   color: #0f766e;
   font-size: 13px;
@@ -832,15 +1325,10 @@ th {
 }
 
 .metric-item,
-.info-list > div,
-.department-row {
+.info-list > div {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-}
-
-.metric-item,
-.info-list > div {
   padding: 10px 0;
   border-bottom: 1px solid #e2e8f0;
 }
@@ -851,17 +1339,6 @@ th {
 
 .tag-block + .tag-block {
   margin-top: 18px;
-}
-
-.department-list {
-  display: grid;
-  gap: 10px;
-}
-
-.department-row {
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: #f8fafc;
 }
 
 .meta-row {
@@ -877,9 +1354,10 @@ th {
   line-height: 1.8;
 }
 
-.workflow-box,
+.ai-capability-box,
 .warning-box,
-.intervention-panel {
+.intervention-panel,
+.progress-panel {
   margin-top: 20px;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
@@ -893,12 +1371,154 @@ th {
   border-color: #fde68a;
 }
 
-.workflow-box pre {
-  margin: 10px 0 0;
-  white-space: pre-wrap;
-  word-break: break-word;
+.suggestion-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.suggestion-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 4px;
+  background: linear-gradient(90deg, #0f766e, #14b8a6, #67e8f9);
+  opacity: 0.9;
+}
+
+.compact-head {
+  margin-bottom: 12px;
+}
+
+.polished-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.polished-list li {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.action-index {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+  box-shadow: 0 8px 18px rgba(20, 184, 166, 0.25);
+  position: relative;
+  margin-top: 2px;
+}
+
+.action-index::after {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.ai-capability-box {
+  position: relative;
+  background:
+    radial-gradient(circle at top right, rgba(45, 212, 191, 0.18), transparent 32%),
+    linear-gradient(180deg, #f8fffe 0%, #f8fafc 100%);
+}
+
+.ai-capability-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.capability-eyebrow {
+  margin: 0 0 8px;
+  color: #0f766e;
   font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.ai-capability-head h3 {
+  margin: 0;
+  font-size: 18px;
   color: #0f172a;
+}
+
+.capability-copy {
+  margin: 12px 0 0;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.capability-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.capability-tag {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(20, 184, 166, 0.18);
+  color: #155e75;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 8px 20px rgba(148, 163, 184, 0.12);
+}
+
+.capability-glow {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 40%),
+    linear-gradient(135deg, #0f766e, #2dd4bf);
+  box-shadow: 0 16px 32px rgba(20, 184, 166, 0.22);
+  flex-shrink: 0;
+}
+
+.skeleton-group {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+
+.skeleton-line.long {
+  width: 100%;
+}
+
+.skeleton-line.short {
+  width: 60%;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .ai-result {
@@ -945,8 +1565,9 @@ th {
   color: #b91c1c;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1200px) {
   .kpi-grid,
+  .chart-grid,
   .detail-grid,
   .double-grid,
   .focus-grid,
@@ -963,9 +1584,16 @@ th {
   .detail-actions,
   .toolbar,
   .hero-right,
-  .meta-row {
+  .meta-row,
+  .donut-layout {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .donut-ring,
+  .donut-ring.small {
+    width: 132px;
+    height: 132px;
   }
 }
 </style>

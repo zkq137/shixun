@@ -92,7 +92,17 @@ def risk_overview():
 @app.get("/api/risk-employees")
 def risk_employees():
     level = request.args.get("level")
-    return jsonify(get_risk_employees(level=level))
+    keyword = request.args.get("keyword")
+    page = request.args.get("page", 1)
+    page_size = request.args.get("pageSize", 10)
+    return jsonify(
+        get_risk_employees(
+            level=level,
+            keyword=keyword,
+            page=page,
+            page_size=page_size,
+        )
+    )
 
 
 @app.get("/api/risk-employees/<employee_id>")
