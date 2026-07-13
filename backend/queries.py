@@ -303,9 +303,8 @@ def get_potential_by_id(employee_id):
 
 
 def update_potential(employee_id, potential_score, potential_level, talent_tag=None):
-    """更新员工潜力数据，同时同步到 employee_talent_data"""
+    """更新员工潜力数据（仅更新 employee_potential 表）"""
     try:
-        # 1. 更新 employee_potential 表
         sql_potential = """
             UPDATE employee_potential
             SET potential_score = %s, potential_level = %s
@@ -318,15 +317,147 @@ def update_potential(employee_id, potential_score, potential_level, talent_tag=N
         params.append(employee_id)
 
         execute(sql_potential, params)
+        return True
+    except Exception:
+        return False
 
-        # 2. 同步更新 employee_talent_data 表
+
+# ── 岗位风险研判 ───────────────────────────────────────
+
+
+def get_position_risk_list():
+    """查询岗位风险列表"""
+    try:
+        rows = query_all(
+            "SELECT position_name, total_risk_score, risk_level "
+            "FROM position_risk ORDER BY total_risk_score DESC"
+        )
+        return rows
+    except Exception:
+        return []
+
+
+def get_employee_risk_list():
+    """查询员工流失风险"""
+    try:
+        rows = query_all(
+            """
+            SELECT
+                employee_id,
+                name,
+                department,
+                position_name AS current_position,
+                attrition_risk_score,
+                attrition_risk
+            FROM employee_talent_data
+            WHERE attrition_risk IS NOT NULL AND attrition_risk != ''
+            ORDER BY attrition_risk_score DESC
+            LIMIT 50
+            """
+        )
+        return rows
+    except Exception:
+        return []
+
+
+# ── 员工培训计划表 ─────────────────────────────────────
+
+
+def get_training_list():
+    """查询员工培训计划列表"""
+    try:
+        rows = query_all(
+            "SELECT employee_id, name, training_plan, is_completed, created_at "
+            "FROM employee_training_plan ORDER BY created_at DESC"
+        )
+        return rows
+    except Exception:
+        return []
+
+
+def add_training(employee_id, name, training_plan):
+    """添加员工培训计划"""
+    try:
         execute(
-            "UPDATE employee_talent_data "
-            "SET potential_score = %s, potential_level = %s "
-            "WHERE employee_id = %s",
-            (potential_score, potential_level, employee_id),
+            "INSERT INTO employee_training_plan (employee_id, name, training_plan) VALUES (%s, %s, %s)",
+            (employee_id, name, training_plan),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _split_training_names(text):
+    """将逗号/顿号分隔的培训名称拆分为列表"""
+    if not text:
+        return []
+    import re
+    return [s.strip() for s in re.split(r"[、,，]", str(text)) if s.strip()]
+
+
+def update_training_status(employee_id, training_plan, is_completed):
+    """更新培训完成状态，同步更新 employee_ability.training_completed"""
+    try:
+        # 1. 更新培训计划表
+        execute(
+            "UPDATE employee_training_plan SET is_completed = %s WHERE employee_id = %s AND training_plan = %s",
+            (is_completed, employee_id, training_plan),
         )
 
+        # 2. 同步更新 employee_ability.training_completed
+        ability = query_one(
+            "SELECT training_completed FROM employee_ability WHERE employee_id = %s",
+            (employee_id,),
+        )
+
+        if is_completed:
+            # 标记完成 → 添加培训
+            new_trainings = _split_training_names(training_plan)
+            if not new_trainings:
+                return True
+
+            if ability:
+                existing_set = set(_split_training_names(ability["training_completed"]))
+                to_add = [t for t in new_trainings if t not in existing_set]
+                if to_add:
+                    separator = "、" if ability["training_completed"] else ""
+                    new_value = ability["training_completed"] + separator + "、".join(to_add)
+                    execute(
+                        "UPDATE employee_ability SET training_completed = %s WHERE employee_id = %s",
+                        (new_value, employee_id),
+                    )
+            else:
+                name_row = query_one(
+                    "SELECT name FROM employee_training_plan WHERE employee_id = %s LIMIT 1",
+                    (employee_id,),
+                )
+                emp_name = name_row["name"] if name_row else ""
+                execute(
+                    "INSERT INTO employee_ability (employee_id, name, training_completed) VALUES (%s, %s, %s)",
+                    (employee_id, emp_name, "、".join(new_trainings)),
+                )
+        else:
+            # 撤销完成 → 从 ability 中移除这些培训
+            if ability and ability["training_completed"]:
+                remove_set = set(_split_training_names(training_plan))
+                remaining = [t for t in _split_training_names(ability["training_completed"]) if t not in remove_set]
+                new_value = "、".join(remaining) if remaining else ""
+                execute(
+                    "UPDATE employee_ability SET training_completed = %s WHERE employee_id = %s",
+                    (new_value, employee_id),
+                )
+        return True
+    except Exception:
+        return False
+
+
+def delete_training(employee_id, training_plan):
+    """删除培训计划"""
+    try:
+        execute(
+            "DELETE FROM employee_training_plan WHERE employee_id = %s AND training_plan = %s",
+            (employee_id, training_plan),
+        )
         return True
     except Exception:
         return False

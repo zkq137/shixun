@@ -16,7 +16,7 @@ const currentView = ref(localStorage.getItem('shixun_current_view') || 'overview
 const navItems = [
   { id: 'overview', icon: '📊', label: '概览驾驶舱' },
   { id: 'ninebox', icon: '🎯', label: '人才九宫格' },
-  { id: 'potential', icon: '🧠', label: '人才潜力' },
+  { id: 'potential', icon: '🧠', label: '潜力·风险研判' },
   { id: 'succession', icon: '👥', label: '继任计划' },
   { id: 'training', icon: '📚', label: '培训发展' },
   { id: 'risk', icon: '⚠️', label: '风险预警' },
@@ -88,7 +88,7 @@ async function handleLogout() {
         <h1>
           <span v-if="currentView === 'overview'">📊 概览驾驶舱</span>
           <span v-else-if="currentView === 'ninebox'">🎯 人才九宫格</span>
-          <span v-else-if="currentView === 'potential'">🧠 人才潜力</span>
+          <span v-else-if="currentView === 'potential'">🧠 人才潜力评估与岗位风险研判</span>
           <span v-else-if="currentView === 'succession'">👥 继任计划</span>
           <span v-else-if="currentView === 'training'">📚 培训发展</span>
           <span v-else-if="currentView === 'risk'">⚠️ 风险预警</span>

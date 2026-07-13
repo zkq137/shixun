@@ -1,18 +1,3 @@
--- 创建触发器：更新employee_potential时自动同步到employee_talent_data
--- 先删除已存在的同名触发器
-DROP TRIGGER IF EXISTS trg_employee_potential_update;
-
--- 修改分隔符，避免触发体中的分号被误执行
-DELIMITER $$
-
-CREATE TRIGGER trg_employee_potential_update
-AFTER UPDATE ON employee_potential
-FOR EACH ROW
-BEGIN
-    UPDATE employee_talent_data
-    SET potential_score = NEW.potential_score,
-        potential_level = NEW.potential_level
-    WHERE employee_id = NEW.employee_id;
-END$$
-
-DELIMITER ;
+-- 注意：该触发器已废弃！
+-- employee_talent_data 表中的 potential_score 和 potential_level 列已被删除，
+-- 因此不再需要同步触发器。保留此文件仅作历史参考，请勿执行。
