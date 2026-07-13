@@ -26,6 +26,12 @@ from backend.queries import (
     get_potential_list,
     get_potential_by_id,
     update_potential,
+    get_training_list,
+    add_training,
+    update_training_status,
+    delete_training,
+    get_position_risk_list,
+    get_employee_risk_list,
 )
 
 app = Flask(__name__)
@@ -96,6 +102,25 @@ def potential_by_id(employee_id):
         return jsonify({"error": "未找到该员工"}), 404
     return jsonify(result)
 
+
+@app.get("/api/position-risks")
+def position_risks():
+    """岗位风险研判列表"""
+    try:
+        data = get_position_risk_list()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/employee-risks")
+def employee_risks():
+    """员工流失风险列表"""
+    try:
+        data = get_employee_risk_list()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.get("/api/employees/<employee_no>")
@@ -171,6 +196,9 @@ def auth_logout():
 DIFY_API_URL = "http://localhost/v1/chat-messages"
 DIFY_APP_ID = "app-13oLzUizeaNgxlBqh913Hu9g"
 
+# 培训智能体配置
+TRAINING_AGENT_ID = "app-i76mFs84OFgh5PXW2flJ9UXi"
+
 
 @app.post("/api/ai/chat")
 def ai_chat():
@@ -220,6 +248,104 @@ def ai_chat():
         })
     except Exception as e:
         return jsonify({"error": f"AI 服务调用失败: {str(e)}"}), 502
+
+
+@app.post("/api/ai/training-chat")
+def training_ai_chat():
+    """培训智能体对话（使用独立的培训 Agent）"""
+    data = request.get_json()
+    if not data or "query" not in data:
+        return jsonify({"error": "缺少 query 参数"}), 400
+
+    payload = _json.dumps({
+        "inputs": data.get("inputs", {}),
+        "query": data["query"],
+        "response_mode": "streaming",
+        "conversation_id": data.get("conversation_id", ""),
+        "user": data.get("user", "admin"),
+    }).encode("utf-8")
+
+    try:
+        req = Request(
+            DIFY_API_URL,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {TRAINING_AGENT_ID}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urlopen(req, timeout=60) as resp:
+            full_answer = ""
+            conv_id = ""
+            for line in resp:
+                line = line.decode("utf-8").strip()
+                if line.startswith("data: "):
+                    try:
+                        chunk = _json.loads(line[6:])
+                        if "answer" in chunk:
+                            full_answer += chunk["answer"]
+                        if chunk.get("conversation_id"):
+                            conv_id = chunk["conversation_id"]
+                        if chunk.get("event") == "message_end":
+                            break
+                    except _json.JSONDecodeError:
+                        continue
+        return jsonify({
+            "answer": full_answer,
+            "conversation_id": conv_id,
+        })
+    except Exception as e:
+        return jsonify({"error": f"培训智能体调用失败: {str(e)}"}), 502
+
+
+# ── 培训计划 CRUD API ──────────────────────────────────
+
+
+@app.get("/api/training/list")
+def training_list():
+    """获取培训计划列表"""
+    try:
+        data = get_training_list()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/api/training/add")
+def training_add():
+    """添加培训计划"""
+    data = request.get_json()
+    if not data or not all(k in data for k in ("employee_id", "name", "training_plan")):
+        return jsonify({"error": "缺少必填参数"}), 400
+    ok = add_training(data["employee_id"], data["name"], data["training_plan"])
+    if ok:
+        return jsonify({"status": "ok", "message": "培训计划添加成功"})
+    return jsonify({"error": "添加失败"}), 500
+
+
+@app.post("/api/training/update-status")
+def training_update_status():
+    """更新培训完成状态"""
+    data = request.get_json()
+    if not data or not all(k in data for k in ("employee_id", "training_plan", "is_completed")):
+        return jsonify({"error": "缺少必填参数"}), 400
+    ok = update_training_status(data["employee_id"], data["training_plan"], data["is_completed"])
+    if ok:
+        return jsonify({"status": "ok", "message": "状态更新成功"})
+    return jsonify({"error": "更新失败"}), 500
+
+
+@app.post("/api/training/delete")
+def training_delete():
+    """删除培训计划"""
+    data = request.get_json()
+    if not data or not all(k in data for k in ("employee_id", "training_plan")):
+        return jsonify({"error": "缺少必填参数"}), 400
+    ok = delete_training(data["employee_id"], data["training_plan"])
+    if ok:
+        return jsonify({"status": "ok", "message": "培训计划已删除"})
+    return jsonify({"error": "删除失败"}), 500
 
 
 @app.get("/api/auth/wechat/url")

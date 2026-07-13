@@ -7,6 +7,7 @@
 6 silly config load:file:D:\Develop\Nodejs\node_global\etc\npmrc
 7 verbose title npm run dev
 8 verbose argv "run" "dev"
-9 verbose logfile logs-max:10 dir:D:\Shixun\shixun\frontend\.npm-cache\_logs\2026-07-10T07_57_28_990Z-
-10 verbose logfile D:\Shixun\shixun\frontend\.npm-cache\_logs\2026-07-10T07_57_28_990Z-debug-0.log
-11 silly logfile done cleaning log files
+9 verbose logfile logs-max:10 dir:D:\Shixun\shixun\frontend\.npm-cache\_logs\2026-07-13T02_04_32_710Z-
+10 verbose logfile D:\Shixun\shixun\frontend\.npm-cache\_logs\2026-07-13T02_04_32_710Z-debug-0.log
+11 silly logfile start cleaning logs, removing 1 files
+12 silly logfile done cleaning log files

@@ -28,7 +28,6 @@ cursor.execute("""
         etd.position_name,
         COUNT(*) AS cnt,
         ROUND(AVG(etd.attrition_risk_score), 2) AS avg_risk_score,
-        ROUND(AVG(etd.potential_score), 2) AS avg_potential,
         ROUND(AVG(etd.performance_score), 2) AS avg_perf
     FROM employee_talent_data etd
     GROUP BY etd.position_name
