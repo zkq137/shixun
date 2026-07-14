@@ -1,10 +1,89 @@
 WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
  * Running on all addresses (0.0.0.0)
  * Running on http://127.0.0.1:5000
- * Running on http://10.2.190.37:5000
+ * Running on http://192.168.1.2:5000
 Press CTRL+C to quit
  * Restarting with stat
  * Debugger is active!
- * Debugger PIN: 249-276-246
-127.0.0.1 - - [14/Jul/2026 16:12:26] "GET /api/health HTTP/1.1" 200 -
-127.0.0.1 - - [14/Jul/2026 16:12:58] "GET /api/succession/positions HTTP/1.1" 200 -
+ * Debugger PIN: 117-903-953
+127.0.0.1 - - [14/Jul/2026 18:07:43] "GET /api/potential HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:07:43] "GET /api/position-risks HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:07:43] "GET /api/employee-risks HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:07:48] "GET /api/succession/candidates HTTP/1.1" 500 -
+Traceback (most recent call last):
+  File "C:\Users\zkq73\AppData\Local\Programs\Python\Python312\Lib\site-packages\pymysql\connections.py", line 649, in connect
+    sock = socket.create_connection(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zkq73\AppData\Local\Programs\Python\Python312\Lib\socket.py", line 852, in create_connection
+    raise exceptions[0]
+  File "C:\Users\zkq73\AppData\Local\Programs\Python\Python312\Lib\socket.py", line 837, in create_connection
+    sock.connect(sa)
+TimeoutError: timed out
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\zkq73\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\app.py", line 1536, in __call__
+    return self.wsgi_app(environ, start_response)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zkq73\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\app.py", line 1514, in wsgi_app
+    response = self.handle_exception(e)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zkq73\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask_cors\extension.py", line 176, in wrapped_function
+    return cors_after_request(app.make_response(f(*args, **kwargs)))
+                                                ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zkq73\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zkq73\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zkq73\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask_cors\extension.py", line 176, in wrapped_function
+    return cors_after_request(app.make_response(f(*args, **kwargs)))
+                                                ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zkq73\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zkq73\AppData\Local\Programs\Python\Python312\Lib\site-packages\flask\app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\z7z8\ʵѵ\shixun\app.py", line 280, in succession_candidates_list
+    data = get_succession_candidates_filtered(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\z7z8\ʵѵ\shixun\backend\queries.py", line 1089, in get_succession_candidates_filtered
+    rows = query_all(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\z7z8\ʵѵ\shixun\backend\db.py", line 26, in query_all
+    conn = get_connection()
+           ^^^^^^^^^^^^^^^^
+  File "C:\z7z8\ʵѵ\shixun\backend\db.py", line 21, in get_connection
+    return pymysql.connect(**DB_CONFIG)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\zkq73\AppData\Local\Programs\Python\Python312\Lib\site-packages\pymysql\connections.py", line 361, in __init__
+    self.connect()
+  File "C:\Users\zkq73\AppData\Local\Programs\Python\Python312\Lib\site-packages\pymysql\connections.py", line 716, in connect
+    raise exc
+pymysql.err.OperationalError: (2003, "Can't connect to MySQL server on '39.107.99.7' (timed out)")
+127.0.0.1 - - [14/Jul/2026 18:07:50] "GET /api/promotion-agent/positions HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:07:51] "GET /api/training/list HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:07:51] "GET /api/dify/status HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:07:51] "GET /api/risk-settings HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:07:53] "GET /api/training/completed-abilities HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:07:53] "GET /api/potential HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:07:53] "GET /api/position-risks HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:07:53] "GET /api/dify/status HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:07:53] "GET /api/risk-settings HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:07:58] "GET /api/employee-risks HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:08:01] "GET /api/promotion-agent/positions HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:08:03] "GET /api/training/list HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:08:03] "GET /api/training/completed-abilities HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:08:10] "GET /api/risk-overview HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:08:10] "POST /api/promotion-agent/stream HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:08:13] "GET /api/training/list HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:08:13] "GET /api/training/completed-abilities HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:08:25] "GET /api/risk-overview HTTP/1.1" 200 -
+127.0.0.1 - - [14/Jul/2026 18:09:58] "POST /api/promotion-agent/workflow HTTP/1.1" 200 -
+ * Detected change in 'C:\\z7z8\\ʵѵ\\shixun\\app.py', reloading
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 117-903-953

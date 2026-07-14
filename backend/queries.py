@@ -1091,29 +1091,6 @@ def get_succession_candidates_filtered(position_name=None, candidate_name=None):
 
 
 # ── 员工查询 ───────────────────────────────────────────
-def get_risk_employee_detail(employee_id):
-    try:
-        rows = _fetch_risk_employee_rows(employee_id=employee_id)
-        if not rows:
-            return None
-
-        row = rows[0]
-        position_name = str(row.get("position_name") or "").strip()
-        position_risk_map = _load_position_risk_map()
-        position_profile_map = _load_position_profile_map()
-        succession_map = _load_succession_map()
-
-        thresholds = get_risk_settings()
-        risk_item = _build_risk_item(
-            row,
-            position_risk_map,
-            position_profile_map,
-            succession_map,
-            thresholds=thresholds,
-        )
-        position_profile = position_profile_map.get(position_name, {})
-        succession_info = succession_map.get(employee_id)
-
 
 def get_risk_employee_detail(employee_id):
     try:
@@ -1563,3 +1540,4 @@ def get_position_profile_names():
         return [r["position_name"] for r in rows]
     except Exception:
         return []
+
