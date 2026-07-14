@@ -1012,9 +1012,11 @@ def get_succession_candidates():
         from backend.mock_data import get_succession_candidates as mock
 
         return mock()
-    """关键岗位继任候选人"""
-    rows = query_all(
-        """
+
+
+def get_succession_candidates_filtered(position_name=None, candidate_name=None):
+    """按岗位名称/员工姓名筛选继任候选人"""
+    sql = """
         SELECT
             sc.department,
             sc.target_position_level AS positionLevel,
@@ -1023,10 +1025,19 @@ def get_succession_candidates():
             COALESCE(sc.succession_level, '待评估') AS readiness,
             CAST(sc.match_score AS DECIMAL(10,0)) AS matchScore
         FROM succession_candidates sc
-        ORDER BY CAST(sc.match_score AS DECIMAL(10,2)) DESC
-        """
-    )
-    return rows
+    """
+    conditions = []
+    params = []
+    if position_name:
+        conditions.append("sc.target_position LIKE %s")
+        params.append(f"%{position_name}%")
+    if candidate_name:
+        conditions.append("sc.employee_name LIKE %s")
+        params.append(f"%{candidate_name}%")
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    sql += " ORDER BY CAST(sc.match_score AS DECIMAL(10,2)) DESC"
+    return query_all(sql, params)
 
 
 def get_risk_overview():
@@ -1080,6 +1091,28 @@ def get_succession_candidates_filtered(position_name=None, candidate_name=None):
 
 
 # ── 员工查询 ───────────────────────────────────────────
+def get_risk_employee_detail(employee_id):
+    try:
+        rows = _fetch_risk_employee_rows(employee_id=employee_id)
+        if not rows:
+            return None
+
+        row = rows[0]
+        position_name = str(row.get("position_name") or "").strip()
+        position_risk_map = _load_position_risk_map()
+        position_profile_map = _load_position_profile_map()
+        succession_map = _load_succession_map()
+
+        thresholds = get_risk_settings()
+        risk_item = _build_risk_item(
+            row,
+            position_risk_map,
+            position_profile_map,
+            succession_map,
+            thresholds=thresholds,
+        )
+        position_profile = position_profile_map.get(position_name, {})
+        succession_info = succession_map.get(employee_id)
 
 
 def get_risk_employee_detail(employee_id):
