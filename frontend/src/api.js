@@ -60,6 +60,55 @@ export async function getRiskEmployeeDetail(employeeId) {
   return fetchJson(`/api/risk-employees/${encodeURIComponent(employeeId)}`)
 }
 
+export async function getRiskSettings() {
+  return fetchJson('/api/risk-settings')
+}
+
+export async function updateRiskSettings(payload) {
+  const response = await fetch('/api/risk-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+  const data = await response.json()
+  if (!response.ok) {
+    throw new Error(data.error || `请求失败: ${response.status}`)
+  }
+
+  return data
+}
+
+export async function updateRiskEmployeeNote(employeeId, payload) {
+  const response = await fetch(`/api/risk-employees/${encodeURIComponent(employeeId)}/note`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+  const data = await response.json()
+  if (!response.ok) {
+    throw new Error(data.error || `请求失败: ${response.status}`)
+  }
+
+  return data
+}
+
+export async function createRiskFollowUp(employeeId, payload) {
+  const response = await fetch(`/api/risk-employees/${encodeURIComponent(employeeId)}/follow-ups`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+  const data = await response.json()
+  if (!response.ok) {
+    throw new Error(data.error || `请求失败: ${response.status}`)
+  }
+
+  return data
+}
+
 export async function getDifyStatus() {
   return fetchJson('/api/dify/status')
 }

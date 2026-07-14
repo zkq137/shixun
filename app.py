@@ -17,6 +17,7 @@ from backend.wechat_config import (
     FRONTEND_SUCCESS_URL,
 )
 from backend.dify_client import run_workflow, get_dify_settings
+from backend.risk_module_store import add_follow_up, get_follow_ups, get_risk_settings, update_employee_note, update_risk_settings
 
 from backend.queries import (
     get_nine_box,
@@ -111,6 +112,46 @@ def risk_employee_detail(employee_id):
     if result is None:
         return jsonify({"error": "未找到该员工"}), 404
     return jsonify(result)
+
+
+@app.get("/api/risk-settings")
+def risk_settings():
+    return jsonify(get_risk_settings())
+
+
+@app.post("/api/risk-settings")
+def update_risk_settings_api():
+    data = request.get_json() or {}
+    high = data.get("highRiskThreshold", 70)
+    medium = data.get("mediumRiskThreshold", 40)
+    return jsonify(update_risk_settings(high, medium))
+
+
+@app.post("/api/risk-employees/<employee_id>/note")
+def update_risk_employee_note(employee_id):
+    data = request.get_json() or {}
+    note = data.get("note", "")
+    author = data.get("author", "????")
+    return jsonify(update_employee_note(employee_id, note, author=author))
+
+
+@app.get("/api/risk-employees/<employee_id>/follow-ups")
+def risk_employee_follow_ups(employee_id):
+    return jsonify({"items": get_follow_ups(employee_id)})
+
+
+@app.post("/api/risk-employees/<employee_id>/follow-ups")
+def create_risk_employee_follow_up(employee_id):
+    data = request.get_json() or {}
+    record = add_follow_up(
+        employee_id,
+        status=data.get("status", "???"),
+        note=data.get("note", ""),
+        owner=data.get("owner", ""),
+        follow_up_date=data.get("followUpDate", ""),
+        next_action=data.get("nextAction", ""),
+    )
+    return jsonify(record), 201
 
 
 @app.get("/api/training-plans")

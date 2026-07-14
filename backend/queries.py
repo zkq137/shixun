@@ -1,9 +1,10 @@
-"""Database queries for the current talent pipeline schema."""
+﻿"""Database queries for the current talent pipeline schema."""
 
 from datetime import date
 import re
 
 from backend.db import execute, query_all, query_one
+from backend.risk_module_store import get_employee_note, get_follow_ups, get_risk_settings
 
 
 KEY_JOB_LEVELS = {"经理层", "总监层", "高管层", "决策层"}
@@ -52,7 +53,19 @@ def _compute_nine_grid(performance_score, potential_score):
     return f"{pot_level}-{perf_level}"
 
 
-def _normalize_risk_level(raw_level, raw_score):
+def _normalize_risk_level(raw_level, raw_score, thresholds=None):
+    score = _safe_float(raw_score)
+    thresholds = thresholds or get_risk_settings()
+    high_threshold = _safe_float(thresholds.get("highRiskThreshold"), 70)
+    medium_threshold = _safe_float(thresholds.get("mediumRiskThreshold"), 40)
+
+    if score >= high_threshold:
+        return "高风险"
+    if score >= medium_threshold:
+        return "中风险"
+    if score > 0:
+        return "低风险"
+
     text = str(raw_level or "").strip()
     if "高" in text:
         return "高风险"
@@ -60,12 +73,6 @@ def _normalize_risk_level(raw_level, raw_score):
         return "中风险"
     if "低" in text:
         return "低风险"
-
-    score = _safe_float(raw_score)
-    if score >= 60:
-        return "高风险"
-    if score >= 40:
-        return "中风险"
     return "低风险"
 
 
@@ -437,7 +444,7 @@ def _build_intervention_context(row, risk_item, key_position, succession_info, r
     )
 
 
-def _build_risk_item(row, position_risk_map, position_profile_map, succession_map):
+def _build_risk_item(row, position_risk_map, position_profile_map, succession_map, thresholds=None):
     position_name = str(row.get("position_name") or "").strip()
     employee_id = str(row.get("employee_id") or "").strip()
 
@@ -446,7 +453,7 @@ def _build_risk_item(row, position_risk_map, position_profile_map, succession_ma
     succession_info = succession_map.get(employee_id)
 
     risk_score = _safe_int(row.get("attrition_risk_score"))
-    risk_level = _normalize_risk_level(row.get("attrition_risk"), risk_score)
+    risk_level = _normalize_risk_level(row.get("attrition_risk"), risk_score, thresholds=thresholds)
     priority_level = _compute_priority_level(
         row,
         risk_level,
@@ -497,9 +504,16 @@ def _build_risk_dataset():
     position_risk_map = _load_position_risk_map()
     position_profile_map = _load_position_profile_map()
     succession_map = _load_succession_map()
+    thresholds = get_risk_settings()
 
     items = [
-        _build_risk_item(row, position_risk_map, position_profile_map, succession_map)
+        _build_risk_item(
+            row,
+            position_risk_map,
+            position_profile_map,
+            succession_map,
+            thresholds=thresholds,
+        )
         for row in rows
     ]
 
@@ -538,7 +552,7 @@ def _matches_keyword(item, keyword):
 
 
 def _mock_risk_dataset():
-    return [
+    items = [
         {
             "employeeId": "E0007",
             "employee": "\u674e\u7136",
@@ -699,6 +713,15 @@ def _mock_risk_dataset():
         },
     ]
 
+    thresholds = get_risk_settings()
+    for item in items:
+        item["riskLevel"] = _normalize_risk_level(
+            item.get("riskLevel"),
+            item.get("riskScore"),
+            thresholds=thresholds,
+        )
+    return items
+
 
 def _build_risk_overview_payload(items):
     total = len(items)
@@ -707,6 +730,11 @@ def _build_risk_overview_payload(items):
     low = len([item for item in items if item["riskLevel"] == "\u4f4e\u98ce\u9669"])
     high_priority = len([item for item in items if item["priorityLevel"] == "high"])
     departments = len({item["department"] for item in items if item["department"]})
+
+    focus_candidates = [
+        item for item in items
+        if item["riskLevel"] == "\u9ad8\u98ce\u9669"
+    ]
 
     department_counts = {}
     for item in items:
@@ -747,7 +775,7 @@ def _build_risk_overview_payload(items):
             {"label": "\u9ad8\u4f18\u5148\u7ea7", "value": high_priority, "color": "#0f766e"},
             {"label": "\u5e38\u89c4\u8ddf\u8fdb", "value": max(total - high_priority, 0), "color": "#94a3b8"},
         ],
-        "focusEmployees": items[:5],
+        "focusEmployees": focus_candidates[:6],
         "departmentDistribution": department_distribution,
         "reasonDistribution": reason_distribution,
     }
@@ -854,6 +882,8 @@ def _build_mock_risk_detail(employee_id):
         },
         "employeeInput": employee_input,
         "employeeInputText": str(employee_input),
+        "managerNote": {"note": "", "updatedAt": "", "updatedBy": ""},
+        "followUps": [],
         "interventionContext": (
             f"\u5458\u5de5\u59d3\u540d\uff1a{item['employee']}\\n"
             f"\u5458\u5de5\u5de5\u53f7\uff1a{item['employeeId']}\\n"
@@ -1018,7 +1048,14 @@ def get_risk_employee_detail(employee_id):
         position_profile_map = _load_position_profile_map()
         succession_map = _load_succession_map()
 
-        risk_item = _build_risk_item(row, position_risk_map, position_profile_map, succession_map)
+        thresholds = get_risk_settings()
+        risk_item = _build_risk_item(
+            row,
+            position_risk_map,
+            position_profile_map,
+            succession_map,
+            thresholds=thresholds,
+        )
         position_profile = position_profile_map.get(position_name, {})
         succession_info = succession_map.get(employee_id)
 
@@ -1094,6 +1131,8 @@ def get_risk_employee_detail(employee_id):
             "employeeInput": employee_input,
             "employeeInputText": str(employee_input),
             "interventionContext": intervention_context,
+            "managerNote": get_employee_note(employee_id),
+            "followUps": get_follow_ups(employee_id),
         }
     except Exception as exc:
         _log_risk_error("get_risk_employee_detail", exc)

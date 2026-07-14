@@ -1,12 +1,16 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { marked } from 'marked'
 import {
+  createRiskFollowUp,
   generateRiskIntervention,
   getDifyStatus,
   getRiskEmployeeDetail,
   getRiskEmployees,
   getRiskOverview,
+  getRiskSettings,
+  updateRiskEmployeeNote,
+  updateRiskSettings,
 } from '../api'
 
 marked.setOptions({
@@ -36,6 +40,24 @@ const interventionResult = ref('')
 const difyConfigured = ref(false)
 const loadingStage = ref('')
 const loadingSeconds = ref(0)
+const settingsSaving = ref(false)
+const noteSaving = ref(false)
+const followUpSaving = ref(false)
+const noteDraft = ref('')
+
+const riskSettings = reactive({
+  highRiskThreshold: 70,
+  mediumRiskThreshold: 40,
+  updatedAt: '',
+})
+
+const followUpForm = reactive({
+  status: '待跟进',
+  owner: '',
+  followUpDate: '',
+  nextAction: '',
+  note: '',
+})
 
 let loadingTimer = null
 let secondsTimer = null
@@ -93,19 +115,62 @@ function openStoredDetail() {
   saveCurrentStep('detail')
 }
 
+function syncDetailDrafts() {
+  noteDraft.value = detailData.value?.managerNote?.note || ''
+}
+
 const donutStyle = computed(() => buildDonutStyle(overviewData.value.riskDistribution))
 const priorityDonutStyle = computed(() => buildDonutStyle(overviewData.value.priorityDistribution))
 
-const pageNumbers = computed(() => {
+const paginationItems = computed(() => {
   const totalPages = listData.value.totalPages || 1
   const current = listData.value.page || 1
-  const start = Math.max(1, current - 2)
-  const end = Math.min(totalPages, start + 4)
-  const pages = []
-  for (let page = start; page <= end; page += 1) {
-    pages.push(page)
+  const items = []
+
+  const pushPage = (page) => {
+    items.push({ type: 'page', key: `page-${page}`, label: String(page), value: page })
   }
-  return pages
+
+  const pushJump = (direction, target) => {
+    items.push({
+      type: 'jump',
+      key: `jump-${direction}-${target}`,
+      label: '...',
+      value: target,
+    })
+  }
+
+  const pushRange = (start, end) => {
+    for (let page = start; page <= end; page += 1) {
+      pushPage(page)
+    }
+  }
+
+  if (totalPages <= 9) {
+    pushRange(1, totalPages)
+    return items
+  }
+
+  if (current <= 5) {
+    pushRange(1, 7)
+    pushJump('next', 8)
+    pushPage(totalPages)
+    return items
+  }
+
+  if (current >= totalPages - 4) {
+    pushPage(1)
+    pushJump('prev', totalPages - 7)
+    pushRange(totalPages - 6, totalPages)
+    return items
+  }
+
+  pushPage(1)
+  pushJump('prev', current - 3)
+  pushRange(current - 2, current + 2)
+  pushJump('next', current + 3)
+  pushPage(totalPages)
+  return items
 })
 
 const listSummaryText = computed(() => {
@@ -170,6 +235,19 @@ async function loadDifyStatus() {
   }
 }
 
+async function loadRiskSettingsState() {
+  try {
+    const result = await getRiskSettings()
+    riskSettings.highRiskThreshold = result.highRiskThreshold ?? 70
+    riskSettings.mediumRiskThreshold = result.mediumRiskThreshold ?? 40
+    riskSettings.updatedAt = result.updatedAt || ''
+  } catch {
+    riskSettings.highRiskThreshold = 70
+    riskSettings.mediumRiskThreshold = 40
+    riskSettings.updatedAt = ''
+  }
+}
+
 async function loadOverview() {
   overviewLoading.value = true
   error.value = ''
@@ -221,6 +299,7 @@ async function openDetail(item) {
 
   try {
     detailData.value = await getRiskEmployeeDetail(item.employeeId)
+    syncDetailDrafts()
     saveDetailData(detailData.value)
     saveCurrentStep('detail')
   } catch (err) {
@@ -261,6 +340,11 @@ async function changePage(page) {
   if (page < 1 || page > listData.value.totalPages || page === currentPage.value) return
   currentPage.value = page
   await loadRiskList()
+}
+
+async function clickPaginationItem(item) {
+  if (!item?.value) return
+  await changePage(item.value)
 }
 
 async function onPageSizeChange() {
@@ -312,8 +396,8 @@ async function generatePlan() {
     const result = await generateRiskIntervention({
       employeeInput: detailData.value.employeeInput,
       analysisMode: 'single',
-      highRiskThreshold: 70,
-      mediumRiskThreshold: 40,
+      highRiskThreshold: riskSettings.highRiskThreshold,
+      mediumRiskThreshold: riskSettings.mediumRiskThreshold,
       user: 'risk-module',
     })
     interventionResult.value = result.answer || ''
@@ -325,13 +409,85 @@ async function generatePlan() {
   }
 }
 
+async function saveThresholdSettings() {
+  settingsSaving.value = true
+  error.value = ''
+
+  try {
+    const result = await updateRiskSettings({
+      highRiskThreshold: riskSettings.highRiskThreshold,
+      mediumRiskThreshold: riskSettings.mediumRiskThreshold,
+    })
+    riskSettings.highRiskThreshold = result.highRiskThreshold
+    riskSettings.mediumRiskThreshold = result.mediumRiskThreshold
+    riskSettings.updatedAt = result.updatedAt || ''
+    await Promise.all([loadOverview(), currentStep.value === 'list' ? loadRiskList() : Promise.resolve()])
+    if (detailData.value?.employeeId) {
+      detailData.value = await getRiskEmployeeDetail(detailData.value.employeeId)
+      syncDetailDrafts()
+      saveDetailData(detailData.value)
+    }
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '风险阈值保存失败'
+  } finally {
+    settingsSaving.value = false
+  }
+}
+
+async function saveManagerNote() {
+  if (!detailData.value?.employeeId) return
+
+  noteSaving.value = true
+  interventionError.value = ''
+  try {
+    const result = await updateRiskEmployeeNote(detailData.value.employeeId, {
+      note: noteDraft.value,
+      author: '部门经理',
+    })
+    detailData.value.managerNote = result
+    saveDetailData(detailData.value)
+  } catch (err) {
+    interventionError.value = err instanceof Error ? err.message : '补充说明保存失败'
+  } finally {
+    noteSaving.value = false
+  }
+}
+
+async function submitFollowUp() {
+  if (!detailData.value?.employeeId || !followUpForm.note.trim()) return
+
+  followUpSaving.value = true
+  interventionError.value = ''
+  try {
+    const record = await createRiskFollowUp(detailData.value.employeeId, {
+      status: followUpForm.status,
+      owner: followUpForm.owner,
+      followUpDate: followUpForm.followUpDate,
+      nextAction: followUpForm.nextAction,
+      note: followUpForm.note,
+    })
+    detailData.value.followUps = [record, ...(detailData.value.followUps || [])]
+    followUpForm.status = '待跟进'
+    followUpForm.owner = ''
+    followUpForm.followUpDate = ''
+    followUpForm.nextAction = ''
+    followUpForm.note = ''
+    saveDetailData(detailData.value)
+  } catch (err) {
+    interventionError.value = err instanceof Error ? err.message : '跟进记录保存失败'
+  } finally {
+    followUpSaving.value = false
+  }
+}
+
 onMounted(async () => {
   detailData.value = restoreDetailData()
+  syncDetailDrafts()
   const savedStep = window.sessionStorage.getItem(STORAGE_KEYS.step)
   if (savedStep === 'detail' && detailData.value) {
     currentStep.value = 'detail'
   }
-  await Promise.all([loadOverview(), loadDifyStatus()])
+  await Promise.all([loadOverview(), loadDifyStatus(), loadRiskSettingsState()])
 })
 
 onBeforeUnmount(() => {
@@ -399,6 +555,30 @@ onBeforeUnmount(() => {
             <h3>{{ overviewData.summary.highPriority }}</h3>
             <span class="card-note">优先处理高风险或高价值中风险员工</span>
           </article>
+        </section>
+
+        <section class="panel threshold-panel">
+          <div class="section-head threshold-head">
+            <div>
+              <h2>风险阈值配置</h2>
+              <p class="section-desc">支持按你们项目口径微调高风险与中风险的划分标准。</p>
+            </div>
+            <span v-if="riskSettings.updatedAt" class="threshold-meta">最近更新：{{ riskSettings.updatedAt }}</span>
+          </div>
+
+          <div class="threshold-form">
+            <label class="threshold-field">
+              <span>高风险阈值</span>
+              <input v-model="riskSettings.highRiskThreshold" type="number" min="1" max="100" />
+            </label>
+            <label class="threshold-field">
+              <span>中风险阈值</span>
+              <input v-model="riskSettings.mediumRiskThreshold" type="number" min="0" max="99" />
+            </label>
+            <button type="button" class="primary-btn" :disabled="settingsSaving" @click="saveThresholdSettings">
+              {{ settingsSaving ? '保存中...' : '保存阈值' }}
+            </button>
+          </div>
         </section>
 
         <section class="chart-grid">
@@ -515,6 +695,10 @@ onBeforeUnmount(() => {
 
                 <button type="button" class="ghost-btn" @click="openDetail(item)">查看员工详情</button>
               </article>
+
+              <div v-if="overviewData.focusEmployees.length === 0" class="empty-focus-state">
+                当前没有高风险员工，重点预警区会随阈值变化自动更新。
+              </div>
             </div>
           </article>
 
@@ -647,14 +831,17 @@ onBeforeUnmount(() => {
                 上一页
               </button>
               <button
-                v-for="page in pageNumbers"
-                :key="page"
+                v-for="item in paginationItems"
+                :key="item.key"
                 type="button"
                 class="page-btn"
-                :class="{ active: page === listData.page }"
-                @click="changePage(page)"
+                :class="{
+                  active: item.type === 'page' && item.value === listData.page,
+                  jump: item.type === 'jump',
+                }"
+                @click="clickPaginationItem(item)"
               >
-                {{ page }}
+                {{ item.label }}
               </button>
               <button
                 type="button"
@@ -766,6 +953,31 @@ onBeforeUnmount(() => {
               </div>
             </article>
 
+            <article class="panel">
+              <div class="section-head compact-head">
+                <div>
+                  <h2>经理补充说明</h2>
+                  <p class="section-desc">记录部门经理补充的异常表现、离职迹象或稳定性判断。</p>
+                </div>
+              </div>
+
+              <textarea
+                v-model="noteDraft"
+                class="note-textarea"
+                rows="6"
+                placeholder="例如：近期沟通积极性下降、项目投入波动、表达过外部机会意向等"
+              ></textarea>
+
+              <div class="note-footer">
+                <span v-if="detailData.managerNote?.updatedAt" class="note-meta">
+                  最近更新：{{ detailData.managerNote.updatedAt }}
+                </span>
+                <button type="button" class="ghost-btn" :disabled="noteSaving" @click="saveManagerNote">
+                  {{ noteSaving ? '保存中...' : '保存说明' }}
+                </button>
+              </div>
+            </article>
+
             <article class="panel suggestion-panel">
               <div class="section-head compact-head">
                 <div>
@@ -800,6 +1012,72 @@ onBeforeUnmount(() => {
                   <span class="capability-tag">责任人建议</span>
                   <span class="capability-tag">保留动作补充</span>
                 </div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="section-head compact-head">
+                <div>
+                  <h2>结果跟踪</h2>
+                  <p class="section-desc">登记处理状态、责任人和下一步动作，形成持续跟进闭环。</p>
+                </div>
+              </div>
+
+              <div class="followup-form">
+                <label class="followup-field">
+                  <span>处理状态</span>
+                  <select v-model="followUpForm.status" class="toolbar-select">
+                    <option>待跟进</option>
+                    <option>沟通中</option>
+                    <option>已干预</option>
+                    <option>已稳定</option>
+                  </select>
+                </label>
+                <label class="followup-field">
+                  <span>责任人</span>
+                  <input v-model="followUpForm.owner" class="toolbar-input" type="text" placeholder="如：张经理 / HRBP" />
+                </label>
+                <label class="followup-field">
+                  <span>跟进日期</span>
+                  <input v-model="followUpForm.followUpDate" class="toolbar-input" type="date" />
+                </label>
+                <label class="followup-field full">
+                  <span>下一步动作</span>
+                  <input v-model="followUpForm.nextAction" class="toolbar-input" type="text" placeholder="如：一周后复盘沟通结果" />
+                </label>
+                <label class="followup-field full">
+                  <span>跟进备注</span>
+                  <textarea
+                    v-model="followUpForm.note"
+                    class="note-textarea compact-textarea"
+                    rows="4"
+                    placeholder="记录本次处理结果、员工反馈、后续安排"
+                  ></textarea>
+                </label>
+              </div>
+
+              <div class="note-footer">
+                <span class="note-meta">至少填写跟进备注后再提交</span>
+                <button type="button" class="primary-btn" :disabled="followUpSaving || !followUpForm.note.trim()" @click="submitFollowUp">
+                  {{ followUpSaving ? '提交中...' : '新增跟进记录' }}
+                </button>
+              </div>
+
+              <div v-if="detailData.followUps?.length" class="followup-timeline">
+                <article v-for="record in detailData.followUps" :key="record.id" class="timeline-item">
+                  <div class="timeline-dot"></div>
+                  <div class="timeline-body">
+                    <div class="timeline-head">
+                      <strong>{{ record.status }}</strong>
+                      <span>{{ record.followUpDate || record.createdAt }}</span>
+                    </div>
+                    <p>{{ record.note }}</p>
+                    <div class="timeline-meta">
+                      <span v-if="record.owner">责任人：{{ record.owner }}</span>
+                      <span v-if="record.nextAction">下一步：{{ record.nextAction }}</span>
+                    </div>
+                  </div>
+                </article>
               </div>
             </article>
           </section>
@@ -1097,6 +1375,15 @@ onBeforeUnmount(() => {
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
+.empty-focus-state {
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  padding: 20px;
+  background: #f8fafc;
+  color: #64748b;
+  line-height: 1.7;
+}
+
 .focus-top,
 .detail-hero,
 .detail-actions,
@@ -1227,6 +1514,12 @@ onBeforeUnmount(() => {
   min-width: 40px;
 }
 
+.page-btn.jump {
+  color: #0f766e;
+  background: #f0fdfa;
+  border-color: #99f6e4;
+}
+
 .page-btn.active {
   background: #0f766e;
   color: #fff;
@@ -1271,6 +1564,132 @@ onBeforeUnmount(() => {
   margin-bottom: 14px;
   color: #475569;
   font-size: 14px;
+}
+
+.threshold-panel {
+  border: 1px solid #dbeafe;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.threshold-head {
+  margin-bottom: 12px;
+}
+
+.threshold-meta,
+.note-meta {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.threshold-form,
+.followup-form {
+  display: grid;
+  gap: 14px;
+}
+
+.threshold-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+}
+
+.threshold-field,
+.followup-field {
+  display: grid;
+  gap: 8px;
+  color: #334155;
+  font-size: 14px;
+}
+
+.threshold-field input,
+.followup-field input,
+.followup-field textarea {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  font: inherit;
+}
+
+.followup-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 8px;
+}
+
+.followup-field.full {
+  grid-column: 1 / -1;
+}
+
+.note-textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 12px 14px;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.7;
+  color: #334155;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.compact-textarea {
+  min-height: 110px;
+}
+
+.note-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.followup-timeline {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.timeline-item {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.timeline-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #0f766e, #2dd4bf);
+  box-shadow: 0 0 0 4px rgba(45, 212, 191, 0.12);
+  margin-top: 6px;
+}
+
+.timeline-body {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px;
+  background: #fff;
+}
+
+.timeline-head,
+.timeline-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.timeline-body p {
+  margin: 10px 0;
+  color: #334155;
+  line-height: 1.7;
+}
+
+.timeline-meta {
+  color: #64748b;
+  font-size: 13px;
+  flex-wrap: wrap;
 }
 
 .table-wrap {
@@ -1571,7 +1990,9 @@ th {
   .detail-grid,
   .double-grid,
   .focus-grid,
-  .metric-list {
+  .metric-list,
+  .threshold-form,
+  .followup-form {
     grid-template-columns: 1fr;
   }
 }
@@ -1582,10 +2003,13 @@ th {
   .focus-top,
   .detail-hero,
   .detail-actions,
+  .note-footer,
   .toolbar,
   .hero-right,
   .meta-row,
-  .donut-layout {
+  .donut-layout,
+  .timeline-head,
+  .timeline-meta {
     flex-direction: column;
     align-items: flex-start;
   }
