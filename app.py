@@ -22,6 +22,7 @@ from backend.queries import (
     add_training,
     update_training_status,
     delete_training,
+    get_completed_trainings_from_ability,
     get_position_risk_list,
     get_employee_risk_list,
 )
@@ -396,6 +397,13 @@ def training_delete():
     if ok:
         return jsonify({"status": "ok", "message": "培训计划已删除"})
     return jsonify({"error": "删除失败"}), 500
+
+
+@app.get("/api/training/completed-abilities")
+def training_completed_abilities():
+    """获取能力表中员工已完成的培训"""
+    data = get_completed_trainings_from_ability()
+    return jsonify(data)
 
 
 # ── 扫脸登录 API ───────────────────────────────────────
