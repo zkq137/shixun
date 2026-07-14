@@ -1062,6 +1062,59 @@ def get_risk_employees(level=None, keyword=None, page=1, page_size=10):
     return _paginate_risk_items(items, keyword=keyword, page=page, page_size=page_size)
 
 
+def get_succession_candidates_filtered(position_name=None, candidate_name=None):
+    """按岗位名称/员工姓名筛选继任候选人"""
+    sql = """
+        SELECT
+            sc.department,
+            sc.target_position_level AS positionLevel,
+            sc.target_position AS position,
+            sc.employee_name AS candidate,
+            COALESCE(sc.succession_level, '待评估') AS readiness,
+            CAST(sc.match_score AS DECIMAL(10,0)) AS matchScore
+        FROM succession_candidates sc
+    """
+    conditions = []
+    params = []
+    if position_name:
+        conditions.append(" sc.target_position LIKE %s")
+        params.append(f"%{position_name}%")
+    if candidate_name:
+        conditions.append(" sc.employee_name LIKE %s")
+        params.append(f"%{candidate_name}%")
+    if conditions:
+        sql += " WHERE" + " AND".join(conditions)
+    sql += " ORDER BY CAST(sc.match_score AS DECIMAL(10,2)) DESC"
+
+    rows = query_all(sql, params)
+    return rows
+
+
+# ── 员工查询 ───────────────────────────────────────────
+def get_risk_employee_detail(employee_id):
+    try:
+        rows = _fetch_risk_employee_rows(employee_id=employee_id)
+        if not rows:
+            return None
+
+        row = rows[0]
+        position_name = str(row.get("position_name") or "").strip()
+        position_risk_map = _load_position_risk_map()
+        position_profile_map = _load_position_profile_map()
+        succession_map = _load_succession_map()
+
+        thresholds = get_risk_settings()
+        risk_item = _build_risk_item(
+            row,
+            position_risk_map,
+            position_profile_map,
+            succession_map,
+            thresholds=thresholds,
+        )
+        position_profile = position_profile_map.get(position_name, {})
+        succession_info = succession_map.get(employee_id)
+
+
 def get_risk_employee_detail(employee_id):
     try:
         rows = _fetch_risk_employee_rows(employee_id=employee_id)
@@ -1493,5 +1546,20 @@ def get_departments():
             "WHERE department IS NOT NULL AND department != '' ORDER BY department"
         )
         return [r["department"] for r in rows]
+    except Exception:
+        return []
+
+
+
+
+def get_position_profile_names():
+    """Return position names from position_profile for workflow target selection."""
+    try:
+        rows = query_all(
+            "SELECT position_name FROM position_profile "
+            "WHERE position_name IS NOT NULL AND position_name != '' "
+            "ORDER BY position_name"
+        )
+        return [r["position_name"] for r in rows]
     except Exception:
         return []

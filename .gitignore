@@ -7,3 +7,8 @@ frontend/dist/
 .env
 .env.*
 backend/local_settings.py
+frontend/.npm-cache/
+backend.log
+backend.err.log
+frontend.log
+frontend.err.log
