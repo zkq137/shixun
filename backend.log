@@ -1,2 +1,4 @@
  * Serving Flask app 'app'
  * Debug mode: on
+[risk-module] get_risk_overview failed: OperationalError: (2003, "Can't connect to MySQL server on '39.107.99.7' (timed out)")
+[risk-module] get_risk_overview failed: OperationalError: (2003, "Can't connect to MySQL server on '39.107.99.7' (timed out)")

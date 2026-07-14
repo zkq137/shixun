@@ -6,7 +6,7 @@ from urllib.request import Request, urlopen
 import json as _json
 from urllib.error import HTTPError, URLError
 
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request, stream_with_context
 from flask_cors import CORS
 
 from backend.wechat_config import (
@@ -52,6 +52,7 @@ CORS(app)
 # ── 二维码登录 Session 存储 ─────────────────────────────
 # token -> { "status": "pending"|"scanned"|"confirmed", "created_at": timestamp }
 qrcode_sessions = {}
+promotion_agent_sessions = {}
 
 BASE_DIR = Path(__file__).resolve().parent
 LOCAL_ENV_PATH = BASE_DIR / ".env"
@@ -119,10 +120,17 @@ def _normalize_succession_workflow_response(body):
     if promotion_report in (None, ""):
         promotion_report = outputs.get("text") or outputs.get("answer") or outputs.get("result") or ""
 
+    error = ""
+    if isinstance(data, dict):
+        error = data.get("error") or ""
+    if not error and isinstance(body, dict):
+        error = body.get("error") or ""
+
     return {
         "workflow_run_id": body.get("workflow_run_id") or (data or {}).get("id") or "",
         "task_id": body.get("task_id") or (data or {}).get("task_id") or "",
         "status": (data or {}).get("status") or body.get("status") or "unknown",
+        "error": error,
         "promotion_report": promotion_report,
         "position_profile_raw": outputs.get("position_profile_raw") or "",
         "candidate_pool_raw": outputs.get("candidate_pool_raw") or "",
@@ -321,6 +329,170 @@ def succession_workflow():
         return jsonify({"error": f"Dify workflow network error: {str(exc)}"}), 502
     except Exception as exc:
         return jsonify({"error": f"Dify workflow request failed: {str(exc)}"}), 502
+
+
+
+@app.get("/api/promotion-agent/positions")
+def promotion_agent_positions():
+    """Position names for the standalone promotion decision assistant."""
+    return jsonify(get_position_profile_names())
+
+
+@app.post("/api/promotion-agent/workflow")
+def promotion_agent_workflow():
+    """Blocking call for the standalone promotion decision assistant."""
+    data = request.get_json() or {}
+    target_position = (data.get("target_position") or "").strip()
+    promotion_rule = (data.get("promotion_rule") or "").strip()
+    manager_comment = (data.get("manager_comment") or "").strip()
+    created_by = (data.get("created_by") or "HR").strip() or "HR"
+    query = (data.get("query") or "").strip()
+    context = (data.get("conversation_context") or "").strip()
+
+    if not target_position:
+        return jsonify({"error": "Please fill in target_position"}), 400
+
+    extended_comment = manager_comment
+    if query or context:
+        extended_comment = "\n\n".join(
+            part for part in [
+                manager_comment,
+                f"本轮问题：{query}" if query else "",
+                f"最近对话上下文：\n{context}" if context else "",
+            ] if part
+        )
+
+    inputs = {
+        "target_position": target_position,
+        "promotion_rule": promotion_rule,
+        "manager_comment": extended_comment,
+        "created_by": created_by,
+    }
+
+    try:
+        return jsonify(_call_succession_workflow(inputs, user=created_by))
+    except HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            detail = str(exc)
+        return jsonify({"error": f"Dify workflow request failed: {detail or str(exc)}"}), 502
+    except URLError as exc:
+        return jsonify({"error": f"Dify workflow network error: {str(exc)}"}), 502
+    except Exception as exc:
+        return jsonify({"error": f"Dify workflow request failed: {str(exc)}"}), 502
+
+
+@app.post("/api/promotion-agent/stream")
+def promotion_agent_stream():
+    """SSE wrapper for the standalone promotion decision assistant."""
+    data = request.get_json() or {}
+    target_position = (data.get("target_position") or "").strip()
+    promotion_rule = (data.get("promotion_rule") or "").strip()
+    manager_comment = (data.get("manager_comment") or "").strip()
+    created_by = (data.get("created_by") or "HR").strip() or "HR"
+    query = (data.get("query") or "").strip()
+    context = (data.get("conversation_context") or "").strip()
+    conversation_id = (data.get("conversation_id") or "").strip() or uuid.uuid4().hex
+
+    if not target_position:
+        return jsonify({"error": "Please fill in target_position"}), 400
+    if not query:
+        return jsonify({"error": "?? query ??"}), 400
+
+    session = promotion_agent_sessions.setdefault(conversation_id, [])
+    session.append({"role": "user", "content": query})
+    session_context = "\n".join(
+        f"{'用户' if item.get('role') == 'user' else '助手'}: {item.get('content', '')}"
+        for item in session[-8:]
+    )
+    merged_context = "\n".join(part for part in [context, session_context] if part)
+    extended_comment = "\n\n".join(
+        part for part in [
+            manager_comment,
+            f"本轮问题：{query}",
+            f"最近对话上下文：\n{merged_context}" if merged_context else "",
+        ] if part
+    )
+    inputs = {
+        "target_position": target_position,
+        "promotion_rule": promotion_rule,
+        "manager_comment": extended_comment,
+        "created_by": created_by,
+    }
+
+    def sse(event, payload):
+        return f"event: {event}\ndata: {_json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    def generate():
+        yield sse("session", {"conversation_id": conversation_id})
+        yield sse("progress", {"message": "已接收问题，正在调用晋升决策工作流..."})
+        settings = _get_succession_dify_settings()
+        if not settings["api_key"]:
+            yield sse("error", {"error": "DIFY_SUCCESSION_API_KEY is not configured in local .env"})
+            return
+
+        payload = _json.dumps(
+            {"inputs": inputs, "response_mode": "streaming", "user": created_by},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        req = Request(
+            settings["workflow_url"],
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {settings['api_key']}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        final_body = None
+        try:
+            with urlopen(req, timeout=300) as resp:
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    raw_data = line[5:].strip()
+                    if raw_data == "[DONE]":
+                        break
+                    try:
+                        chunk = _json.loads(raw_data)
+                    except Exception:
+                        continue
+                    event_name = chunk.get("event") or "message"
+                    if event_name == "workflow_started":
+                        yield sse("progress", {"message": "工作流已启动，正在读取岗位画像和候选人池..."})
+                    elif event_name in {"node_started", "node_finished"}:
+                        title = (chunk.get("data") or {}).get("title") or "分析节点"
+                        yield sse("progress", {"message": f"{title} 已处理"})
+                    elif event_name in {"text_chunk", "message"}:
+                        text_delta = chunk.get("answer") or chunk.get("text") or chunk.get("delta") or ""
+                        if text_delta:
+                            yield sse("token", {"text": text_delta})
+                    elif event_name == "workflow_finished":
+                        final_body = chunk
+
+            result = _normalize_succession_workflow_response(final_body or {})
+            if result.get("promotion_report"):
+                session.append({"role": "assistant", "content": result["promotion_report"]})
+            yield sse("done", result)
+        except HTTPError as exc:
+            try:
+                detail = exc.read().decode("utf-8", errors="replace")
+            except Exception:
+                detail = str(exc)
+            yield sse("error", {"error": f"Dify workflow request failed: {detail or str(exc)}"})
+        except URLError as exc:
+            yield sse("error", {"error": f"Dify workflow network error: {str(exc)}"})
+        except Exception as exc:
+            yield sse("error", {"error": f"Dify workflow request failed: {str(exc)}"})
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 @app.get("/api/training-plans")
 def training_plans():

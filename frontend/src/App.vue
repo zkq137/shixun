@@ -1,7 +1,8 @@
-﻿<script setup>
+<script setup>
 import { ref } from 'vue'
 import LoginView from './components/LoginView.vue'
 import SuccessionView from './components/SuccessionView.vue'
+import PromotionAgentView from './components/PromotionAgentView.vue'
 import RiskView from './components/RiskView.vue'
 import TrainingView from './components/TrainingView.vue'
 import EmployeeView from './components/EmployeeView.vue'
@@ -11,8 +12,9 @@ const isLoggedIn = ref(localStorage.getItem('shixun_logged_in') === 'true')
 const currentView = ref(localStorage.getItem('shixun_current_view') || 'potential')
 
 const navItems = [
-  { id: 'potential', icon: '▦', label: '潜力与风险研判' },
-  { id: 'succession', icon: '↗', label: '晋升决策' },
+  { id: 'potential', icon: '▦', label: '人才潜力评估与岗位风险研判' },
+  { id: 'succession', icon: '↗', label: '继任计划' },
+  { id: 'promotionAgent', icon: '★', label: '晋升决策辅助' },
   { id: 'training', icon: '◆', label: '培训发展' },
   { id: 'risk', icon: '!', label: '风险预警' },
   { id: 'employee', icon: '⌕', label: '查询员工' },
@@ -20,7 +22,8 @@ const navItems = [
 
 const viewTitles = {
   potential: '人才潜力评估与岗位风险研判',
-  succession: '晋升决策辅助',
+  succession: '继任计划',
+  promotionAgent: '晋升决策辅助 Agent',
   training: '培训发展',
   risk: '风险预警',
   employee: '员工信息查询',
@@ -90,6 +93,7 @@ async function handleLogout() {
       </header>
       <PotentialView v-if="currentView === 'potential'" />
       <SuccessionView v-else-if="currentView === 'succession'" />
+      <PromotionAgentView v-else-if="currentView === 'promotionAgent'" />
       <TrainingView v-else-if="currentView === 'training'" />
       <RiskView v-else-if="currentView === 'risk'" />
       <EmployeeView v-else-if="currentView === 'employee'" />
