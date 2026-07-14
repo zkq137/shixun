@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref } from 'vue'
 import LoginView from './components/LoginView.vue'
 import SuccessionView from './components/SuccessionView.vue'
@@ -7,17 +7,24 @@ import TrainingView from './components/TrainingView.vue'
 import EmployeeView from './components/EmployeeView.vue'
 import PotentialView from './components/PotentialView.vue'
 
-// 从 localStorage 恢复登录状态
 const isLoggedIn = ref(localStorage.getItem('shixun_logged_in') === 'true')
 const currentView = ref(localStorage.getItem('shixun_current_view') || 'potential')
 
 const navItems = [
-  { id: 'potential', icon: '🧠', label: '潜力·风险研判' },
-  { id: 'succession', icon: '👥', label: '继任计划' },
-  { id: 'training', icon: '📚', label: '培训发展' },
-  { id: 'risk', icon: '⚠️', label: '风险预警' },
-  { id: 'employee', icon: '🔍', label: '查询员工' },
+  { id: 'potential', icon: '▦', label: '潜力与风险研判' },
+  { id: 'succession', icon: '↗', label: '晋升决策' },
+  { id: 'training', icon: '◆', label: '培训发展' },
+  { id: 'risk', icon: '!', label: '风险预警' },
+  { id: 'employee', icon: '⌕', label: '查询员工' },
 ]
+
+const viewTitles = {
+  potential: '人才潜力评估与岗位风险研判',
+  succession: '晋升决策辅助',
+  training: '培训发展',
+  risk: '风险预警',
+  employee: '员工信息查询',
+}
 
 function onLoginSuccess() {
   isLoggedIn.value = true
@@ -40,17 +47,15 @@ async function handleLogout() {
 </script>
 
 <template>
-  <!-- 未登录 → 显示登录页 -->
   <LoginView v-if="!isLoggedIn" @login-success="onLoginSuccess" />
 
-  <!-- 已登录 → 显示主界面 -->
   <div v-else class="app-layout">
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <span class="brand-icon">🏢</span>
+        <span class="brand-icon">HR</span>
         <div>
           <p class="brand-title">人才梯队平台</p>
-          <p class="brand-sub">HR 智能驾驶舱</p>
+          <p class="brand-sub">HR 智能驱动</p>
         </div>
       </div>
 
@@ -69,7 +74,7 @@ async function handleLogout() {
 
       <div class="sidebar-footer">
         <div class="user-info">
-          <span class="user-avatar">👤</span>
+          <span class="user-avatar">HR</span>
           <div>
             <p class="user-name">管理员</p>
             <p class="user-role">HR 系统</p>
@@ -81,13 +86,7 @@ async function handleLogout() {
 
     <main class="main-content">
       <header class="content-header">
-        <h1>
-          <span v-if="currentView === 'potential'">🧠 人才潜力评估与岗位风险研判</span>
-          <span v-else-if="currentView === 'succession'">👥 继任计划</span>
-          <span v-else-if="currentView === 'training'">📚 培训发展</span>
-          <span v-else-if="currentView === 'risk'">⚠️ 风险预警</span>
-          <span v-else-if="currentView === 'employee'">🔍 员工信息查询</span>
-        </h1>
+        <h1>{{ viewTitles[currentView] }}</h1>
       </header>
       <PotentialView v-if="currentView === 'potential'" />
       <SuccessionView v-else-if="currentView === 'succession'" />

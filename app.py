@@ -1,8 +1,10 @@
+﻿import os
 import uuid
 import time
+from pathlib import Path
 from urllib.request import Request, urlopen
 import json as _json
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -40,6 +42,7 @@ from backend.queries import (
     get_completed_trainings_from_ability,
     get_position_risk_list,
     get_employee_risk_list,
+    get_position_profile_names,
 )
 from backend.face_auth import get_face_encoding, compare_faces, decode_base64_image
 
@@ -49,6 +52,113 @@ CORS(app)
 # ── 二维码登录 Session 存储 ─────────────────────────────
 # token -> { "status": "pending"|"scanned"|"confirmed", "created_at": timestamp }
 qrcode_sessions = {}
+
+BASE_DIR = Path(__file__).resolve().parent
+LOCAL_ENV_PATH = BASE_DIR / ".env"
+_LOCAL_ENV_CACHE = None
+
+
+def _load_local_env():
+    global _LOCAL_ENV_CACHE
+    if _LOCAL_ENV_CACHE is not None:
+        return _LOCAL_ENV_CACHE
+
+    values = {}
+    try:
+        raw_text = LOCAL_ENV_PATH.read_text(encoding="utf-8")
+    except Exception:
+        raw_text = ""
+
+    for line in raw_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            values[key] = value
+
+    _LOCAL_ENV_CACHE = values
+    return values
+
+
+def _get_setting(name, default=""):
+    env_value = os.getenv(name)
+    if env_value not in (None, ""):
+        return env_value
+    return _load_local_env().get(name, default)
+
+
+def _clean_base_url(raw_value):
+    value = (raw_value or "").strip()
+    if not value:
+        return "http://127.0.0.1"
+    if value.endswith("/v1"):
+        value = value[:-3]
+    return value.rstrip("/")
+
+
+def _get_succession_dify_settings():
+    base_url = _clean_base_url(_get_setting("DIFY_BASE_URL", "http://127.0.0.1"))
+    api_key = (_get_setting("DIFY_SUCCESSION_API_KEY") or "").strip()
+    return {
+        "base_url": base_url,
+        "api_key": api_key,
+        "workflow_url": f"{base_url}/v1/workflows/run",
+    }
+
+
+def _normalize_succession_workflow_response(body):
+    data = body.get("data") if isinstance(body, dict) else {}
+    outputs = data.get("outputs") if isinstance(data, dict) else {}
+    if not outputs and isinstance(body, dict):
+        outputs = body.get("outputs") or {}
+
+    promotion_report = outputs.get("promotion_report")
+    if promotion_report in (None, ""):
+        promotion_report = outputs.get("text") or outputs.get("answer") or outputs.get("result") or ""
+
+    return {
+        "workflow_run_id": body.get("workflow_run_id") or (data or {}).get("id") or "",
+        "task_id": body.get("task_id") or (data or {}).get("task_id") or "",
+        "status": (data or {}).get("status") or body.get("status") or "unknown",
+        "promotion_report": promotion_report,
+        "position_profile_raw": outputs.get("position_profile_raw") or "",
+        "candidate_pool_raw": outputs.get("candidate_pool_raw") or "",
+        "outputs": outputs,
+        "raw": body,
+    }
+
+
+def _call_succession_workflow(inputs, user="admin"):
+    settings = _get_succession_dify_settings()
+    if not settings["api_key"]:
+        raise RuntimeError("DIFY_SUCCESSION_API_KEY is not configured in local .env")
+
+    payload = _json.dumps(
+        {
+            "inputs": inputs,
+            "response_mode": "blocking",
+            "user": user,
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+    req = Request(
+        settings["workflow_url"],
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {settings['api_key']}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    with urlopen(req, timeout=300) as resp:
+        body = _json.loads(resp.read().decode("utf-8"))
+
+    return _normalize_succession_workflow_response(body)
 
 
 def cleanup_expired_sessions():
@@ -163,7 +273,7 @@ def create_risk_employee_follow_up(employee_id):
     return jsonify(record), 201
 @app.get("/api/succession/candidates")
 def succession_candidates_list():
-    """按岗位名称/员工姓名筛选继任候选人"""
+    """Filter succession candidates by position or employee name."""
     position = request.args.get("position", "").strip()
     candidate = request.args.get("candidate", "").strip()
     data = get_succession_candidates_filtered(
@@ -173,52 +283,44 @@ def succession_candidates_list():
     return jsonify(data)
 
 
-@app.get("/api/succession/departments")
-def succession_departments():
-    """获取部门列表"""
-    return jsonify(get_departments())
+@app.get("/api/succession/positions")
+def succession_positions():
+    """Get position_profile.position_name values for the workflow selector."""
+    return jsonify(get_position_profile_names())
 
 
 @app.post("/api/succession/workflow")
 def succession_workflow():
-    """调用继任计划工作流（Dify）"""
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "缺少请求参数"}), 400
+    """Call the promotion decision Dify workflow."""
+    data = request.get_json() or {}
+    target_position = data.get("target_position", "").strip()
+    promotion_rule = data.get("promotion_rule", "").strip()
+    manager_comment = data.get("manager_comment", "").strip()
+    created_by = data.get("created_by", "HR").strip() or "HR"
 
-    department = data.get("department", "").strip()
-    level = data.get("level", "").strip()
-    position = data.get("position", "").strip()
+    if not target_position:
+        return jsonify({"error": "Please fill in target_position"}), 400
 
-    if not all([department, level, position]):
-        return jsonify({"error": "请填写完整的岗位信息（部门、层级、岗位名称）"}), 400
-
-    payload = _json.dumps({
-        "inputs": {
-            "bumen": department,
-            "cengji": level,
-            "gangwei": position,
-        },
-        "response_mode": "blocking",
-        "user": "admin",
-    }).encode("utf-8")
+    inputs = {
+        "target_position": target_position,
+        "promotion_rule": promotion_rule,
+        "manager_comment": manager_comment,
+        "created_by": created_by,
+    }
 
     try:
-        req = Request(
-            WORKFLOW_API_URL,
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {SUCCESSION_AGENT_ID}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        with urlopen(req, timeout=300) as resp:
-            result = _json.loads(resp.read())
+        result = _call_succession_workflow(inputs, user=created_by)
         return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": f"工作流调用失败: {str(e)}"}), 502
-
+    except HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            detail = str(exc)
+        return jsonify({"error": f"Dify workflow request failed: {detail or str(exc)}"}), 502
+    except URLError as exc:
+        return jsonify({"error": f"Dify workflow network error: {str(exc)}"}), 502
+    except Exception as exc:
+        return jsonify({"error": f"Dify workflow request failed: {str(exc)}"}), 502
 
 @app.get("/api/training-plans")
 def training_plans():
@@ -688,3 +790,7 @@ def face_user_delete():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
+
+
+
