@@ -21,6 +21,8 @@ from backend.queries import (
     get_overview,
     get_risk_alerts,
     get_succession_candidates,
+    get_succession_candidates_filtered,
+    get_departments,
     get_training_plans,
     get_employee_by_no,
     get_potential_list,
@@ -83,6 +85,65 @@ def succession():
 @app.get("/api/risks")
 def risks():
     return jsonify(get_risk_alerts())
+
+
+@app.get("/api/succession/candidates")
+def succession_candidates_list():
+    """按岗位名称/员工姓名筛选继任候选人"""
+    position = request.args.get("position", "").strip()
+    candidate = request.args.get("candidate", "").strip()
+    data = get_succession_candidates_filtered(
+        position if position else None,
+        candidate if candidate else None,
+    )
+    return jsonify(data)
+
+
+@app.get("/api/succession/departments")
+def succession_departments():
+    """获取部门列表"""
+    return jsonify(get_departments())
+
+
+@app.post("/api/succession/workflow")
+def succession_workflow():
+    """调用继任计划工作流（Dify）"""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "缺少请求参数"}), 400
+
+    department = data.get("department", "").strip()
+    level = data.get("level", "").strip()
+    position = data.get("position", "").strip()
+
+    if not all([department, level, position]):
+        return jsonify({"error": "请填写完整的岗位信息（部门、层级、岗位名称）"}), 400
+
+    payload = _json.dumps({
+        "inputs": {
+            "bumen": department,
+            "cengji": level,
+            "gangwei": position,
+        },
+        "response_mode": "blocking",
+        "user": "admin",
+    }).encode("utf-8")
+
+    try:
+        req = Request(
+            WORKFLOW_API_URL,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {SUCCESSION_AGENT_ID}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urlopen(req, timeout=300) as resp:
+            result = _json.loads(resp.read())
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": f"工作流调用失败: {str(e)}"}), 502
 
 
 @app.get("/api/training-plans")
@@ -193,11 +254,17 @@ def auth_logout():
 
 
 # Dify AI 智能体配置（本地部署）
-DIFY_API_URL = "http://localhost/v1/chat-messages"
+DIFY_API_URL = "http://192.168.125.130/v1/chat-messages"
 DIFY_APP_ID = "app-13oLzUizeaNgxlBqh913Hu9g"
 
 # 培训智能体配置
 TRAINING_AGENT_ID = "app-i76mFs84OFgh5PXW2flJ9UXi"
+
+# 工作流 API 端点（Workflow 模式使用独立的 endpoint）
+WORKFLOW_API_URL = "http://192.168.125.130/v1/workflows/run"
+
+# 继任计划工作流配置
+SUCCESSION_AGENT_ID = "app-8dC5kB9slXrtnTDXBc67xM1u"
 
 
 @app.post("/api/ai/chat")

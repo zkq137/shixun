@@ -102,34 +102,16 @@ def get_succession_candidates():
     rows = query_all(
         """
         SELECT
-            sc.target_position_name AS position,
-            e.name AS candidate,
-            COALESCE(sc.readiness_level, '待评估') AS readiness,
-            ROUND(sc.match_score, 0) AS matchScore,
-            CASE
-                WHEN tr.risk_level = '高风险' THEN '高'
-                WHEN tr.risk_level = '中风险' THEN '中'
-                ELSE '低'
-            END AS risk
+            sc.department,
+            sc.target_position_level AS positionLevel,
+            sc.target_position AS position,
+            sc.employee_name AS candidate,
+            COALESCE(sc.succession_level, '待评估') AS readiness,
+            CAST(sc.match_score AS DECIMAL(10,0)) AS matchScore
         FROM succession_candidates sc
-        JOIN employees e ON e.id = sc.candidate_employee_id
-        LEFT JOIN (
-            SELECT employee_id, risk_level
-            FROM turnover_risk_records
-            WHERE (employee_id, assessment_time) IN (
-                SELECT employee_id, MAX(assessment_time)
-                FROM turnover_risk_records
-                GROUP BY employee_id
-            )
-        ) tr ON tr.employee_id = sc.candidate_employee_id
-        ORDER BY sc.match_score DESC
-        LIMIT 20
+        ORDER BY CAST(sc.match_score AS DECIMAL(10,2)) DESC
         """
     )
-    # 如果表为空，返回模拟数据
-    if not rows:
-        from backend.mock_data import get_succession_candidates as mock
-        return mock()
     return rows
 
 
@@ -188,6 +170,34 @@ def get_training_plans():
     # progress 最大 1.0
     for r in rows:
         r["progress"] = min(float(r["progress"]), 1.0)
+    return rows
+
+
+def get_succession_candidates_filtered(position_name=None, candidate_name=None):
+    """按岗位名称/员工姓名筛选继任候选人"""
+    sql = """
+        SELECT
+            sc.department,
+            sc.target_position_level AS positionLevel,
+            sc.target_position AS position,
+            sc.employee_name AS candidate,
+            COALESCE(sc.succession_level, '待评估') AS readiness,
+            CAST(sc.match_score AS DECIMAL(10,0)) AS matchScore
+        FROM succession_candidates sc
+    """
+    conditions = []
+    params = []
+    if position_name:
+        conditions.append(" sc.target_position LIKE %s")
+        params.append(f"%{position_name}%")
+    if candidate_name:
+        conditions.append(" sc.employee_name LIKE %s")
+        params.append(f"%{candidate_name}%")
+    if conditions:
+        sql += " WHERE" + " AND".join(conditions)
+    sql += " ORDER BY CAST(sc.match_score AS DECIMAL(10,2)) DESC"
+
+    rows = query_all(sql, params)
     return rows
 
 
@@ -461,3 +471,18 @@ def delete_training(employee_id, training_plan):
         return True
     except Exception:
         return False
+
+
+# ── 部门列表 ───────────────────────────────────────────
+
+
+def get_departments():
+    """从员工表获取所有部门列表"""
+    try:
+        rows = query_all(
+            "SELECT DISTINCT department FROM employee_talent_data "
+            "WHERE department IS NOT NULL AND department != '' ORDER BY department"
+        )
+        return [r["department"] for r in rows]
+    except Exception:
+        return []
