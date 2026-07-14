@@ -1,20 +1,10 @@
 import uuid
 import time
-from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 import json as _json
 
-from flask import Flask, jsonify, request, redirect
+from flask import Flask, jsonify, request
 from flask_cors import CORS
-
-from backend.wechat_config import (
-    WECHAT_APP_ID,
-    WECHAT_APP_SECRET,
-    WECHAT_QR_URL,
-    WECHAT_TOKEN_URL,
-    WECHAT_USERINFO_URL,
-    FRONTEND_SUCCESS_URL,
-)
 
 from backend.queries import (
     get_nine_box,
@@ -33,6 +23,7 @@ from backend.queries import (
     get_position_risk_list,
     get_employee_risk_list,
 )
+from backend.face_auth import get_face_encoding, compare_faces, decode_base64_image
 
 app = Flask(__name__)
 CORS(app)
@@ -300,8 +291,6 @@ def training_ai_chat():
 
 
 # ── 培训计划 CRUD API ──────────────────────────────────
-
-
 @app.get("/api/training/list")
 def training_list():
     """获取培训计划列表"""
@@ -310,8 +299,6 @@ def training_list():
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
 @app.post("/api/training/add")
 def training_add():
     """添加培训计划"""
@@ -322,8 +309,6 @@ def training_add():
     if ok:
         return jsonify({"status": "ok", "message": "培训计划添加成功"})
     return jsonify({"error": "添加失败"}), 500
-
-
 @app.post("/api/training/update-status")
 def training_update_status():
     """更新培训完成状态"""
@@ -334,8 +319,6 @@ def training_update_status():
     if ok:
         return jsonify({"status": "ok", "message": "状态更新成功"})
     return jsonify({"error": "更新失败"}), 500
-
-
 @app.post("/api/training/delete")
 def training_delete():
     """删除培训计划"""
@@ -348,93 +331,131 @@ def training_delete():
     return jsonify({"error": "删除失败"}), 500
 
 
-@app.get("/api/auth/wechat/url")
-def wechat_auth_url():
-    """返回微信扫码登录的授权URL（前端弹窗使用）"""
-    state = uuid.uuid4().hex
-    # 当前服务器地址作为回调
-    callback = quote(f"{request.host_url.rstrip('/')}/api/auth/wechat/callback")
-    auth_url = (
-        f"{WECHAT_QR_URL}"
-        f"?appid={WECHAT_APP_ID}"
-        f"&redirect_uri={callback}"
-        f"&response_type=code"
-        f"&scope=snsapi_login"
-        f"&state={state}"
-        f"#wechat_redirect"
+# ── 扫脸登录 API ───────────────────────────────────────
+
+
+@app.post("/api/face/register")
+def face_register():
+    """扫脸注册：上传人脸照片（支持多帧），提取特征并存储"""
+    data = request.get_json()
+    if not data or "username" not in data:
+        return jsonify({"error": "缺少必填参数: username"}), 400
+
+    username = data["username"].strip()
+    if not username:
+        return jsonify({"error": "用户名不能为空"}), 400
+
+    # 支持多帧（images 数组）和单帧（image）
+    images = data.get("images", [])
+    if not images and "image" in data:
+        images = [data["image"]]
+    if not images:
+        return jsonify({"error": "缺少必填参数: image 或 images"}), 400
+
+    import json
+    from backend.db import query_one, execute
+
+    # 检查用户名是否已存在
+    existing = query_one(
+        "SELECT id FROM face_users WHERE username = %s", (username,)
     )
-    return jsonify({"url": auth_url, "state": state})
+    if existing:
+        return jsonify({"error": "用户名已存在"}), 409
+
+    # 对每帧提取特征，取平均值
+    encodings = []
+    errors = []
+    for i, img_b64 in enumerate(images):
+        enc, msg = get_face_encoding(img_b64)
+        if enc is None:
+            errors.append(f"第{i + 1}帧: {msg}")
+        else:
+            encodings.append(enc)
+
+    if not encodings:
+        detail = "；".join(errors) if errors else "特征提取失败"
+        return jsonify({"error": f"所有帧均未检测到人脸。{detail}"}), 400
+
+    # 多帧特征取平均
+    import numpy as np
+    avg_encoding = np.mean(encodings, axis=0).tolist()
+
+    affected = execute(
+        "INSERT INTO face_users (username, face_encoding) VALUES (%s, %s)",
+        (username, json.dumps(avg_encoding)),
+    )
+    if affected:
+        frames_used = f"（基于 {len(encodings)}/{len(images)} 帧）"
+        return jsonify({"status": "ok", "message": f"人脸注册成功 {frames_used}"})
+    return jsonify({"error": "注册失败"}), 500
 
 
-@app.route("/api/auth/wechat/callback")
-def wechat_callback():
-    """微信回调：用户扫码后微信302跳转到这里"""
-    code = request.args.get("code")
-    state = request.args.get("state")
+@app.post("/api/face/login")
+def face_login():
+    """扫脸登录：上传人脸照片，与数据库中的特征进行比对"""
+    data = request.get_json()
+    if not data or "image" not in data:
+        return jsonify({"error": "缺少必填参数: image"}), 400
 
-    if not code:
-        return "<h2>授权失败，缺少 code 参数</h2>"
+    image_b64 = data["image"]
+    encoding, msg = get_face_encoding(image_b64)
+    if encoding is None:
+        return jsonify({"error": msg}), 400
 
-    try:
-        # 1. 用 code 换取 access_token
-        token_params = urlencode({
-            "appid": WECHAT_APP_ID,
-            "secret": WECHAT_APP_SECRET,
-            "code": code,
-            "grant_type": "authorization_code",
+    # 从数据库获取所有用户的人脸特征
+    from backend.db import query_all
+
+    import json
+
+    users = query_all("SELECT id, username, face_encoding FROM face_users")
+    if not users:
+        return jsonify({"error": "尚未注册任何用户，请先注册"}), 404
+
+    best_match = None
+    best_similarity = 0
+
+    for user in users:
+        known_encoding = json.loads(user["face_encoding"])
+        match, similarity = compare_faces(known_encoding, encoding)
+        if match and similarity > best_similarity:
+            best_similarity = similarity
+            best_match = user["username"]
+
+    if best_match:
+        return jsonify({
+            "status": "ok",
+            "message": "登录成功",
+            "username": best_match,
+            "similarity": round(best_similarity, 3),
         })
-        req = Request(f"{WECHAT_TOKEN_URL}?{token_params}")
-        with urlopen(req, timeout=10) as resp:
-            token_data = _json.loads(resp.read())
-
-        if "errcode" in token_data:
-            return f"<h2>微信登录失败: {token_data.get('errmsg', '未知错误')}</h2>"
-
-        access_token = token_data["access_token"]
-        openid = token_data["openid"]
-
-        # 2. 获取用户信息
-        user_params = urlencode({
-            "access_token": access_token,
-            "openid": openid,
-        })
-        req2 = Request(f"{WECHAT_USERINFO_URL}?{user_params}")
-        with urlopen(req2, timeout=10) as resp2:
-            user_info = _json.loads(resp2.read())
-
-        # 3. 创建登录 session
-        session_token = uuid.uuid4().hex[:16]
-        qrcode_sessions[session_token] = {
-            "status": "confirmed",
-            "created_at": time.time(),
-            "user": {
-                "openid": openid,
-                "nickname": user_info.get("nickname", "微信用户"),
-                "avatar": user_info.get("headimgurl", ""),
-            },
-        }
-
-        # 4. 302 跳回前端，附带 session_token
-        return redirect(f"{FRONTEND_SUCCESS_URL}?token={session_token}")
-
-    except Exception as e:
-        return f"<h2>微信登录异常: {str(e)}</h2>"
+    else:
+        return jsonify({"error": "人脸不匹配，请重试或使用其他方式登录"}), 401
 
 
-@app.get("/api/auth/wechat/user/<token>")
-def wechat_user_info(token):
-    """前端轮询：获取登录后的用户信息"""
-    session = qrcode_sessions.get(token)
-    if not session or session["status"] != "confirmed":
-        return jsonify({"error": "未登录或已过期"}), 401
-    now = time.time()
-    if now - session["created_at"] > 86400:
-        del qrcode_sessions[token]
-        return jsonify({"error": "会话已过期"}), 401
-    return jsonify({
-        "status": "confirmed",
-        "user": session.get("user", {}),
-    })
+@app.get("/api/face/users")
+def face_users_list():
+    """获取已注册的人脸用户列表（仅返回用户名）"""
+    from backend.db import query_all
+
+    users = query_all("SELECT id, username, created_at FROM face_users ORDER BY created_at DESC")
+    return jsonify(users)
+
+
+@app.post("/api/face/delete")
+def face_user_delete():
+    """删除指定人脸用户"""
+    data = request.get_json()
+    if not data or "username" not in data:
+        return jsonify({"error": "缺少必填参数: username"}), 400
+
+    from backend.db import execute
+
+    affected = execute(
+        "DELETE FROM face_users WHERE username = %s", (data["username"],)
+    )
+    if affected:
+        return jsonify({"status": "ok", "message": "用户已删除"})
+    return jsonify({"error": "用户不存在"}), 404
 
 
 if __name__ == "__main__":

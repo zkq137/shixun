@@ -5,6 +5,42 @@
 - 后端：Flask（入口文件 [app.py](app.py)）
 - 前端：Vue3 + Vite（目录 [frontend](frontend)）
 
+## 🤳 扫脸登录与注册
+
+本项目已集成基于摄像头的人脸识别登录/注册功能。
+
+### 功能说明
+
+- **扫脸登录**：面对摄像头拍照，系统自动识别身份并登录
+- **扫脸注册**：首次使用需注册人脸信息（用户名 + 面部照片）
+- **快捷进入**：保留原有的免密快捷登录方式
+- 人脸特征使用 OpenCV LBPH 算法提取和比对，数据存储在 `face_users` 表中
+
+### 技术栈
+
+- **前端**：浏览器 WebRTC API (`getUserMedia`) 采集摄像头照片 → Base64 编码 → 发送到后端
+- **后端**：OpenCV 人脸检测 → LBPH 特征提取 → MySQL 存储特征 → 比对验证
+- **依赖**：`opencv-python`、`opencv-contrib-python-headless`、`numpy`、`Pillow`
+
+### API 接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/face/register` | 人脸注册（`username` + `image` base64） |
+| POST | `/api/face/login` | 人脸登录（`image` base64） |
+| GET | `/api/face/users` | 获取已注册用户列表 |
+| POST | `/api/face/delete` | 删除用户 |
+
+### 使用步骤
+
+1. 打开系统进入登录页
+2. 默认进入"扫脸登录"模式
+3. **首次使用**：点击"扫脸注册"→ 输入用户名 → 面对摄像头 → 拍照 → 确认注册
+4. **再次登录**：面对摄像头 → 拍照 → 确认登录
+5. 也可切换至"快捷进入"使用原有登录方式
+
+> ⚠️ 注意：需要浏览器授予摄像头权限，建议使用 localhost 或 HTTPS 访问。
+
 ### 1. 启动后端（Flask）
 python -m flask run
 
