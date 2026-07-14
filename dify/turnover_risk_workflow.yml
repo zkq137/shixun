@@ -1,0 +1,595 @@
+app:
+  description: ''
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  icon_type: emoji
+  mode: workflow
+  name: 风险
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/deepseek:0.0.17@f7a5c1d222d17ee419b17a80d6e4923838fe93788dc724a3af73fbc6990b3a32
+    version: null
+kind: app
+version: 0.6.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: code
+      id: 1783603622347-source-1783603644944-target
+      selected: false
+      source: '1783603622347'
+      sourceHandle: source
+      target: '1783603644944'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: if-else
+      id: 1783603644944-source-1783644042450-target
+      selected: false
+      source: '1783603644944'
+      sourceHandle: source
+      target: '1783644042450'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: 1783644042450-true-1783644059036-target
+      selected: false
+      source: '1783644042450'
+      sourceHandle: 'true'
+      target: '1783644059036'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: 1783644042450-false-1783644063793-target
+      selected: false
+      source: '1783644042450'
+      sourceHandle: 'false'
+      target: '1783644063793'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: 1783644059036-source-1783644080031-target
+      selected: false
+      source: '1783644059036'
+      sourceHandle: source
+      target: '1783644080031'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: 1783644063793-source-1783644083310-target
+      selected: false
+      source: '1783644063793'
+      sourceHandle: source
+      target: '1783644083310'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 用户输入
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: 员工数据
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: employee_input
+        - default: single
+          hint: ''
+          label: 分析模式
+          options:
+          - single
+          - batch
+          placeholder: ''
+          required: false
+          type: select
+          variable: analysis_mode
+        - default: '70'
+          hint: ''
+          label: 高风险阈值
+          options: []
+          placeholder: ''
+          required: false
+          type: number
+          variable: high_risk_threshold
+        - default: '40'
+          hint: ''
+          label: 中风险阈值
+          options: []
+          placeholder: ''
+          required: false
+          type: number
+          variable: medium_risk_threshold
+      height: 186
+      id: '1783603622347'
+      position:
+        x: 80
+        y: 283
+      positionAbsolute:
+        x: 80
+        y: 283
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "import json\n\n\ndef safe_str(value, default=\"\"):\n    if value is\
+          \ None:\n        return default\n    return str(value).strip()\n\n\ndef\
+          \ safe_float(value, default=0.0):\n    try:\n        text = safe_str(value)\n\
+          \        if text == \"\":\n            return default\n        return float(text)\n\
+          \    except Exception:\n        return default\n\n\ndef parse_employee_profile(employee_profile):\n\
+          \    raw = safe_str(employee_profile)\n    if raw == \"\":\n        return\
+          \ {}\n\n    try:\n        data = json.loads(raw)\n        if isinstance(data,\
+          \ dict):\n            return data\n        if isinstance(data, list) and\
+          \ len(data) > 0 and isinstance(data[0], dict):\n            return data[0]\n\
+          \    except Exception:\n        pass\n\n    return {\"原始输入\": raw}\n\n\n\
+          def calc_risk_score(item):\n    existing_score = item.get(\"流失风险分\")\n \
+          \   if safe_str(existing_score) != \"\":\n        return max(0, min(100,\
+          \ round(safe_float(existing_score), 1)))\n\n    score = 30\n\n    performance\
+          \ = safe_float(item.get(\"绩效评分\"))\n    years = safe_float(item.get(\"司龄(年)\"\
+          ))\n    salary_ratio = safe_float(item.get(\"薪酬系数\"))\n    potential_level\
+          \ = safe_str(item.get(\"潜力等级\"))\n    talent_tag = safe_str(item.get(\"\
+          人才标签\"))\n    training = safe_str(item.get(\"已完成培训\"))\n    work_mode =\
+          \ safe_str(item.get(\"办公方式\"))\n\n    if performance <= 2:\n        score\
+          \ += 20\n    elif performance == 3:\n        score += 10\n    elif performance\
+          \ >= 4:\n        score -= 5\n\n    if years < 1:\n        score += 10\n\
+          \    elif years < 3:\n        score += 6\n    elif years > 8 and performance\
+          \ <= 3:\n        score += 5\n\n    if salary_ratio < 0.85:\n        score\
+          \ += 18\n    elif salary_ratio < 0.95:\n        score += 12\n    elif salary_ratio\
+          \ < 1.0:\n        score += 6\n    elif salary_ratio >= 1.1:\n        score\
+          \ -= 4\n\n    if \"C级\" in potential_level:\n        score += 8\n    elif\
+          \ \"B级\" in potential_level:\n        score += 2\n    elif \"A级\" in potential_level:\n\
+          \        score -= 2\n    elif \"S级\" in potential_level:\n        score\
+          \ -= 4\n\n    if \"待优化\" in talent_tag:\n        score += 12\n    elif \"\
+          储备人才\" in talent_tag:\n        score -= 2\n    elif \"核心骨干\" in talent_tag:\n\
+          \        score -= 4\n\n    if training == \"\":\n        score += 8\n  \
+          \  else:\n        dev_keywords = [\"领导力\", \"职业规划\", \"晋升\", \"项目管理\", \"\
+          高效沟通\"]\n        if not any(keyword in training for keyword in dev_keywords):\n\
+          \            score += 4\n\n    if \"远程\" in work_mode:\n        score +=\
+          \ 3\n    elif \"混合\" in work_mode:\n        score += 1\n\n    return max(0,\
+          \ min(100, round(score, 1)))\n\n\ndef calc_risk_level(item, risk_score):\n\
+          \    existing_level = safe_str(item.get(\"流失风险\"))\n    if existing_level\
+          \ != \"\":\n        return existing_level\n\n    if risk_score >= 70:\n\
+          \        return \"高风险\"\n    if risk_score >= 40:\n        return \"中风险\"\
+          \n    return \"低风险\"\n\n\ndef calc_priority_level(item, risk_level):\n \
+          \   is_key_position = safe_str(item.get(\"是否关键岗位\")) == \"是\"\n    is_successor\
+          \ = safe_str(item.get(\"是否继任候选\")) == \"是\"\n    talent_tag = safe_str(item.get(\"\
+          人才标签\"))\n    potential_level = safe_str(item.get(\"潜力等级\"))\n\n    if risk_level\
+          \ == \"高风险\":\n        return \"high\"\n    if risk_level == \"中风险\" and\
+          \ (\n        is_key_position\n        or is_successor\n        or \"核心骨干\"\
+          \ in talent_tag\n        or \"S级\" in potential_level\n    ):\n        return\
+          \ \"high\"\n    return \"normal\"\n\n\ndef calc_risk_factors(item):\n  \
+          \  factors = []\n\n    performance = safe_float(item.get(\"绩效评分\"))\n  \
+          \  years = safe_float(item.get(\"司龄(年)\"))\n    salary_ratio = safe_float(item.get(\"\
+          薪酬系数\"))\n    training = safe_str(item.get(\"已完成培训\"))\n    work_mode =\
+          \ safe_str(item.get(\"办公方式\"))\n\n    if performance <= 2:\n        factors.append(\"\
+          近期绩效偏低\")\n    if years < 3:\n        factors.append(\"司龄较短，稳定性仍需观察\")\n\
+          \    if salary_ratio < 0.95:\n        factors.append(\"薪酬竞争力偏弱\")\n    if\
+          \ training == \"\":\n        factors.append(\"培训发展支持不足\")\n    else:\n \
+          \       dev_keywords = [\"领导力\", \"职业规划\", \"晋升\", \"项目管理\", \"高效沟通\"]\n\
+          \        if not any(keyword in training for keyword in dev_keywords):\n\
+          \            factors.append(\"发展型培训投入不足\")\n    if \"远程\" in work_mode:\n\
+          \        factors.append(\"远程办公需额外关注归属感\")\n\n    if len(factors) == 0:\n\
+          \        factors.append(\"当前未发现特别突出的显性风险因素\")\n\n    return \"、\".join(factors)\n\
+          \n\ndef build_employee_profile(item):\n    return (\n        f\"姓名：{safe_str(item.get('姓名',\
+          \ '未知'))}；\"\n        f\"工号：{safe_str(item.get('员工工号', '未知'))}；\"\n    \
+          \    f\"部门：{safe_str(item.get('所属部门', '未知'))}；\"\n        f\"岗位：{safe_str(item.get('岗位名称',\
+          \ '未知'))}；\"\n        f\"职级层级：{safe_str(item.get('职级层级', '未知'))}；\"\n  \
+          \      f\"职级：{safe_str(item.get('职级', '未知'))}；\"\n        f\"人才标签：{safe_str(item.get('人才标签',\
+          \ '未知'))}；\"\n        f\"潜力等级：{safe_str(item.get('潜力等级', '未知'))}\"\n   \
+          \ )\n\n\ndef main(employee_input):\n    item = parse_employee_profile(employee_input)\n\
+          \n    output_employee_profile = build_employee_profile(item)\n    risk_score\
+          \ = calc_risk_score(item)\n    risk_level = calc_risk_level(item, risk_score)\n\
+          \    priority_level = calc_priority_level(item, risk_level)\n    risk_factors\
+          \ = calc_risk_factors(item)\n\n    name = safe_str(item.get(\"姓名\"), \"\
+          该员工\")\n    risk_summary = (\n        f\"{name}当前风险等级为{risk_level}，风险分为{risk_score}，\"\
+          \n        f\"干预优先级为{priority_level}。主要关注点：{risk_factors}。\"\n    )\n\n \
+          \   intervention_context = (\n        f\"员工画像：{output_employee_profile}\\\
+          n\"\n        f\"风险分：{risk_score}\\n\"\n        f\"风险等级：{risk_level}\\n\"\
+          \n        f\"干预优先级：{priority_level}\\n\"\n        f\"主要风险因素：{risk_factors}\\\
+          n\"\n        f\"是否关键岗位：{safe_str(item.get('是否关键岗位', '未知'))}\\n\"\n     \
+          \   f\"是否继任候选：{safe_str(item.get('是否继任候选', '未知'))}\\n\"\n        f\"已完成培训：{safe_str(item.get('已完成培训',\
+          \ '无'))}\"\n    )\n\n    return {\n        \"employee_profile\": output_employee_profile,\n\
+          \        \"risk_score\": risk_score,\n        \"risk_level\": risk_level,\n\
+          \        \"priority_level\": priority_level,\n        \"risk_factors\":\
+          \ risk_factors,\n        \"risk_summary\": risk_summary,\n        \"intervention_context\"\
+          : intervention_context,\n    }"
+        code_language: python3
+        outputs:
+          employee_profile:
+            children: null
+            type: string
+          intervention_context:
+            children: null
+            type: string
+          priority_level:
+            children: null
+            type: string
+          risk_factors:
+            children: null
+            type: string
+          risk_level:
+            children: null
+            type: string
+          risk_score:
+            children: null
+            type: number
+          risk_summary:
+            children: null
+            type: string
+        selected: false
+        title: 代码执行
+        type: code
+        variables:
+        - value_selector:
+          - '1783603622347'
+          - employee_input
+          value_type: string
+          variable: employee_input
+      height: 51
+      id: '1783603644944'
+      position:
+        x: 382
+        y: 282
+      positionAbsolute:
+        x: 382
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: contains
+            id: e5e621c3-86b6-4a8e-a8ed-fb8869946a15
+            value: high
+            varType: string
+            variable_selector:
+            - '1783603644944'
+            - priority_level
+          id: 'true'
+          logical_operator: and
+        selected: false
+        title: 条件分支
+        type: if-else
+      height: 147
+      id: '1783644042450'
+      position:
+        x: 683
+        y: 282
+      positionAbsolute:
+        x: 683
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.2
+          mode: chat
+          name: deepseek-v4-pro
+          provider: langgenius/deepseek/deepseek
+        prompt_template:
+        - id: 4b34a366-e03e-42e0-836c-7c4e59a06fcc
+          role: system
+          text: '你是企业HR的人才流失干预助手。
+
+
+
+            你的任务是基于输入的结构化风险结果，为高优先级员工生成可执行的干预方案。
+
+
+
+            请严格遵守以下规则：
+
+            1. 只能依据输入中的员工画像、风险等级、风险因素、联动模块建议来输出，不能编造事实。
+
+            2. 输出必须面向HRBP、部门负责人和管理者，语气要专业、克制、可执行。
+
+            3. 不要重新计算风险分，不要质疑上游评分结果。
+
+            4. 如果员工属于关键岗位、核心骨干、高潜人才或继任候选，请优先强调保留动作和梯队风险。
+
+            5. 如果存在培训不足、发展受阻、薪酬竞争力偏弱等问题，请分别给出具体动作。
+
+
+
+            请按下面固定结构输出：
+
+            一、风险结论
+
+            二、关键证据
+
+            三、风险原因归纳
+
+            四、干预方案
+
+            五、7天行动清单
+
+            六、建议联动模块'
+        - id: 70d1effa-9cd1-463f-9b8a-4fc11ce66aae
+          role: user
+          text: '请根据以下信息生成高优先级流失干预方案：
+
+
+
+            员工画像：
+
+            {{#1783603644944.employee_profile#}}
+
+
+
+            风险结果：
+
+            {{#1783603644944.risk_summary#}}
+
+
+
+            风险因素：
+
+            {{#1783603644944.risk_factors#}}
+
+
+
+            上下文：
+
+            {{#1783603644944.intervention_context#}}
+
+
+            '
+        selected: false
+        structured_output_enabled: false
+        title: 高优先级干预方案 LLM
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1783644059036'
+      position:
+        x: 1004
+        y: 138
+      positionAbsolute:
+        x: 1004
+        y: 138
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.2
+          mode: chat
+          name: deepseek-v4-pro
+          provider: langgenius/deepseek/deepseek
+        prompt_template:
+        - id: 0e749ef1-1d0c-4de3-a923-3f872677f502
+          role: system
+          text: '你是企业HR的人才流失观察助手。
+
+
+
+            你的任务是为常规优先级员工输出观察建议，而不是强干预方案。
+
+
+
+            请严格遵守以下规则：
+
+            1. 只能依据输入的结构化数据输出，不能编造事实。
+
+            2. 输出语气简洁、专业，适合HR或直属经理快速查看。
+
+            3. 不要夸大风险，不要把普通观察对象写成危机员工。
+
+            4. 输出重点应放在“为什么当前不是最高优先级”和“未来如何持续跟踪”。
+
+
+
+            请按下面固定结构输出：
+
+            一、当前判断
+
+            二、主要观察点
+
+            三、建议动作
+
+            四、30天跟踪建议
+
+            五、建议联动模块'
+        - id: d5797677-450d-407f-a5cd-765d78a9c2fb
+          role: user
+          text: '请根据以下信息生成常规优先级观察建议：
+
+
+
+            员工画像：
+
+            {{#1783603644944.employee_profile#}}
+
+
+
+            风险结果：
+
+            {{#1783603644944.risk_summary#}}
+
+
+
+            风险因素：
+
+            {{#1783603644944.risk_factors#}}
+
+
+
+            上下文：
+
+            {{#1783603644944.intervention_context#}}
+
+
+            '
+        selected: false
+        title: 常规优先级建议 LLM
+        type: llm
+        vision:
+          enabled: false
+      height: 87
+      id: '1783644063793'
+      position:
+        x: 1004
+        y: 453
+      positionAbsolute:
+        x: 1004
+        y: 453
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        outputs:
+        - value_selector:
+          - '1783644059036'
+          - text
+          value_type: string
+          variable: text
+        selected: false
+        title: 输出
+        type: end
+      height: 87
+      id: '1783644080031'
+      position:
+        x: 1305
+        y: 138
+      positionAbsolute:
+        x: 1305
+        y: 138
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    - data:
+        outputs:
+        - value_selector:
+          - '1783644063793'
+          - text
+          value_type: string
+          variable: text
+        selected: false
+        title: 输出 2
+        type: end
+      height: 87
+      id: '1783644083310'
+      position:
+        x: 1305
+        y: 453
+      positionAbsolute:
+        x: 1305
+        y: 453
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 241
+    viewport:
+      x: -93.9695050482735
+      y: 34.51124856803813
+      zoom: 1.148698354997035
+  rag_pipeline_variables: []

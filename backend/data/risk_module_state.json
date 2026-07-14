@@ -1,0 +1,47 @@
+{
+  "settings": {
+    "highRiskThreshold": 65,
+    "mediumRiskThreshold": 40,
+    "updatedAt": "2026-07-14T11:10:30"
+  },
+  "employeeNotes": {
+    "E01357930": {
+      "note": "2333333",
+      "updatedAt": "2026-07-14T11:05:27",
+      "updatedBy": "部门经理"
+    }
+  },
+  "followUps": {
+    "E01357930": [
+      {
+        "id": "659cb1af9e",
+        "status": "沟通中",
+        "note": "1111",
+        "owner": "张经理",
+        "followUpDate": "2026-07-03",
+        "nextAction": "一周后复盘",
+        "createdAt": "2026-07-14T10:13:53"
+      },
+      {
+        "id": "f14ccf29f8",
+        "status": "已干预",
+        "note": "333",
+        "owner": "222",
+        "followUpDate": "2026-07-04",
+        "nextAction": "222",
+        "createdAt": "2026-07-14T10:51:21"
+      }
+    ],
+    "E02516070": [
+      {
+        "id": "cacae9f960",
+        "status": "已稳定",
+        "note": "222",
+        "owner": "aaa",
+        "followUpDate": "2026-07-28",
+        "nextAction": "111",
+        "createdAt": "2026-07-14T10:14:16"
+      }
+    ]
+  }
+}

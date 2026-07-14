@@ -2,14 +2,29 @@ import uuid
 import time
 from urllib.request import Request, urlopen
 import json as _json
+from urllib.error import HTTPError
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+
+from backend.wechat_config import (
+    WECHAT_APP_ID,
+    WECHAT_APP_SECRET,
+    WECHAT_QR_URL,
+    WECHAT_TOKEN_URL,
+    WECHAT_USERINFO_URL,
+    FRONTEND_SUCCESS_URL,
+)
+from backend.dify_client import run_workflow, get_dify_settings
+from backend.risk_module_store import add_follow_up, get_follow_ups, get_risk_settings, update_employee_note, update_risk_settings
 
 from backend.queries import (
     get_nine_box,
     get_overview,
     get_risk_alerts,
+    get_risk_overview,
+    get_risk_employees,
+    get_risk_employee_detail,
     get_succession_candidates,
     get_succession_candidates_filtered,
     get_departments,
@@ -79,6 +94,73 @@ def risks():
     return jsonify(get_risk_alerts())
 
 
+@app.get("/api/risk-overview")
+def risk_overview():
+    return jsonify(get_risk_overview())
+
+
+@app.get("/api/risk-employees")
+def risk_employees():
+    level = request.args.get("level")
+    keyword = request.args.get("keyword")
+    page = request.args.get("page", 1)
+    page_size = request.args.get("pageSize", 10)
+    return jsonify(
+        get_risk_employees(
+            level=level,
+            keyword=keyword,
+            page=page,
+            page_size=page_size,
+        )
+    )
+
+
+@app.get("/api/risk-employees/<employee_id>")
+def risk_employee_detail(employee_id):
+    result = get_risk_employee_detail(employee_id)
+    if result is None:
+        return jsonify({"error": "未找到该员工"}), 404
+    return jsonify(result)
+
+
+@app.get("/api/risk-settings")
+def risk_settings():
+    return jsonify(get_risk_settings())
+
+
+@app.post("/api/risk-settings")
+def update_risk_settings_api():
+    data = request.get_json() or {}
+    high = data.get("highRiskThreshold", 70)
+    medium = data.get("mediumRiskThreshold", 40)
+    return jsonify(update_risk_settings(high, medium))
+
+
+@app.post("/api/risk-employees/<employee_id>/note")
+def update_risk_employee_note(employee_id):
+    data = request.get_json() or {}
+    note = data.get("note", "")
+    author = data.get("author", "????")
+    return jsonify(update_employee_note(employee_id, note, author=author))
+
+
+@app.get("/api/risk-employees/<employee_id>/follow-ups")
+def risk_employee_follow_ups(employee_id):
+    return jsonify({"items": get_follow_ups(employee_id)})
+
+
+@app.post("/api/risk-employees/<employee_id>/follow-ups")
+def create_risk_employee_follow_up(employee_id):
+    data = request.get_json() or {}
+    record = add_follow_up(
+        employee_id,
+        status=data.get("status", "???"),
+        note=data.get("note", ""),
+        owner=data.get("owner", ""),
+        follow_up_date=data.get("followUpDate", ""),
+        next_action=data.get("nextAction", ""),
+    )
+    return jsonify(record), 201
 @app.get("/api/succession/candidates")
 def succession_candidates_list():
     """按岗位名称/员工姓名筛选继任候选人"""
@@ -309,6 +391,77 @@ def ai_chat():
         return jsonify({"error": f"AI 服务调用失败: {str(e)}"}), 502
 
 
+@app.get("/api/dify/status")
+def dify_status():
+    settings = get_dify_settings()
+    return jsonify(
+        {
+            "baseUrl": settings["base_url"],
+            "workflowUrl": settings["workflow_url"],
+            "configured": bool(settings["api_key"]),
+        }
+    )
+
+
+@app.post("/api/risk-intervention")
+def risk_intervention():
+    data = request.get_json() or {}
+    employee_input = data.get("employeeInput") or data.get("employee_input")
+
+    if not employee_input:
+        return jsonify({"error": "缺少 employeeInput"}), 400
+
+    if isinstance(employee_input, dict):
+        employee_input = _json.dumps(employee_input, ensure_ascii=False)
+
+    workflow_inputs = {
+        "employee_input": employee_input,
+        "analysis_mode": data.get("analysisMode", "single"),
+        "high_risk_threshold": str(data.get("highRiskThreshold", 70)),
+        "medium_risk_threshold": str(data.get("mediumRiskThreshold", 40)),
+    }
+
+    try:
+        result = run_workflow(
+            workflow_inputs,
+            user=data.get("user", "risk-module"),
+            response_mode="blocking",
+        )
+        return jsonify(
+            {
+                "answer": result["text"],
+                "status": result["status"],
+                "workflow_run_id": result["workflow_run_id"],
+                "task_id": result["task_id"],
+                "outputs": result["outputs"],
+            }
+        )
+    except HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8")
+        except Exception:
+            detail = str(exc)
+        return jsonify({"error": f"Dify 调用失败：{detail}"}), 502
+    except Exception as exc:
+        return jsonify({"error": f"Dify 调用失败：{str(exc)}"}), 502
+
+
+@app.get("/api/auth/wechat/url")
+def wechat_auth_url():
+    """返回微信扫码登录的授权URL（前端弹窗使用）"""
+    state = uuid.uuid4().hex
+    # 当前服务器地址作为回调
+    callback = quote(f"{request.host_url.rstrip('/')}/api/auth/wechat/callback")
+    auth_url = (
+        f"{WECHAT_QR_URL}"
+        f"?appid={WECHAT_APP_ID}"
+        f"&redirect_uri={callback}"
+        f"&response_type=code"
+        f"&scope=snsapi_login"
+        f"&state={state}"
+        f"#wechat_redirect"
+    )
+    return jsonify({"url": auth_url, "state": state})
 @app.post("/api/ai/training-chat")
 def training_ai_chat():
     """培训智能体对话（使用独立的培训 Agent）"""
