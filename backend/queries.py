@@ -1012,6 +1012,21 @@ def get_succession_candidates():
         from backend.mock_data import get_succession_candidates as mock
 
         return mock()
+    """关键岗位继任候选人"""
+    rows = query_all(
+        """
+        SELECT
+            sc.department,
+            sc.target_position_level AS positionLevel,
+            sc.target_position AS position,
+            sc.employee_name AS candidate,
+            COALESCE(sc.succession_level, '待评估') AS readiness,
+            CAST(sc.match_score AS DECIMAL(10,0)) AS matchScore
+        FROM succession_candidates sc
+        ORDER BY CAST(sc.match_score AS DECIMAL(10,2)) DESC
+        """
+    )
+    return rows
 
 
 def get_risk_overview():
@@ -1058,6 +1073,35 @@ def get_risk_employee_detail(employee_id):
         )
         position_profile = position_profile_map.get(position_name, {})
         succession_info = succession_map.get(employee_id)
+def get_succession_candidates_filtered(position_name=None, candidate_name=None):
+    """按岗位名称/员工姓名筛选继任候选人"""
+    sql = """
+        SELECT
+            sc.department,
+            sc.target_position_level AS positionLevel,
+            sc.target_position AS position,
+            sc.employee_name AS candidate,
+            COALESCE(sc.succession_level, '待评估') AS readiness,
+            CAST(sc.match_score AS DECIMAL(10,0)) AS matchScore
+        FROM succession_candidates sc
+    """
+    conditions = []
+    params = []
+    if position_name:
+        conditions.append(" sc.target_position LIKE %s")
+        params.append(f"%{position_name}%")
+    if candidate_name:
+        conditions.append(" sc.employee_name LIKE %s")
+        params.append(f"%{candidate_name}%")
+    if conditions:
+        sql += " WHERE" + " AND".join(conditions)
+    sql += " ORDER BY CAST(sc.match_score AS DECIMAL(10,2)) DESC"
+
+    rows = query_all(sql, params)
+    return rows
+
+
+# ── 员工查询 ───────────────────────────────────────────
 
         training_completed = _split_text(row.get("training_completed"))
         required_training = _split_text(position_profile.get("required_training"))
@@ -1274,8 +1318,9 @@ def get_potential_by_id(employee_id):
 
 
 def update_potential(employee_id, potential_score, potential_level, talent_tag=None):
+    """更新员工潜力数据（仅更新 employee_potential 表）"""
     try:
-        sql = """
+        sql_potential = """
             UPDATE employee_potential
             SET potential_score = %s, potential_level = %s
         """
@@ -1286,15 +1331,185 @@ def update_potential(employee_id, potential_score, potential_level, talent_tag=N
         sql += " WHERE employee_id = %s"
         params.append(employee_id)
 
-        execute(sql, params)
-        execute(
+        execute(sql_potential, params)
+        return True
+    except Exception:
+        return False
+
+
+# ── 岗位风险研判 ───────────────────────────────────────
+
+
+def get_position_risk_list():
+    """查询岗位风险列表"""
+    try:
+        rows = query_all(
+            "SELECT position_name, total_risk_score, risk_level "
+            "FROM position_risk ORDER BY total_risk_score DESC"
+        )
+        return rows
+    except Exception:
+        return []
+
+
+def get_employee_risk_list():
+    """查询员工流失风险"""
+    try:
+        rows = query_all(
             """
-            UPDATE employee_talent_data
-            SET potential_score = %s, potential_level = %s
-            WHERE employee_id = %s
-            """,
-            (potential_score, potential_level, employee_id),
+            SELECT
+                employee_id,
+                name,
+                department,
+                position_name AS current_position,
+                attrition_risk_score,
+                attrition_risk
+            FROM employee_talent_data
+            WHERE attrition_risk IS NOT NULL AND attrition_risk != ''
+            ORDER BY attrition_risk_score DESC
+            LIMIT 50
+            """
+        )
+        return rows
+    except Exception:
+        return []
+
+
+# ── 员工培训计划表 ─────────────────────────────────────
+
+
+def get_training_list():
+    """查询员工培训计划列表"""
+    try:
+        rows = query_all(
+            "SELECT employee_id, name, training_plan, is_completed, created_at "
+            "FROM employee_training_plan ORDER BY created_at DESC"
+        )
+        return rows
+    except Exception:
+        return []
+
+
+def add_training(employee_id, name, training_plan):
+    """添加员工培训计划"""
+    try:
+        execute(
+            "INSERT INTO employee_training_plan (employee_id, name, training_plan) VALUES (%s, %s, %s)",
+            (employee_id, name, training_plan),
         )
         return True
     except Exception:
         return False
+
+
+def _split_training_names(text):
+    """将逗号/顿号分隔的培训名称拆分为列表"""
+    if not text:
+        return []
+    import re
+    return [s.strip() for s in re.split(r"[、,，]", str(text)) if s.strip()]
+
+
+def update_training_status(employee_id, training_plan, is_completed):
+    """更新培训完成状态，同步更新 employee_ability.training_completed"""
+    try:
+        # 1. 更新培训计划表
+        execute(
+            "UPDATE employee_training_plan SET is_completed = %s WHERE employee_id = %s AND training_plan = %s",
+            (is_completed, employee_id, training_plan),
+        )
+
+        # 2. 同步更新 employee_ability.training_completed
+        ability = query_one(
+            "SELECT training_completed FROM employee_ability WHERE employee_id = %s",
+            (employee_id,),
+        )
+
+        if is_completed:
+            # 标记完成 → 添加培训
+            new_trainings = _split_training_names(training_plan)
+            if not new_trainings:
+                return True
+
+            if ability:
+                existing_set = set(_split_training_names(ability["training_completed"]))
+                to_add = [t for t in new_trainings if t not in existing_set]
+                if to_add:
+                    separator = "、" if ability["training_completed"] else ""
+                    new_value = ability["training_completed"] + separator + "、".join(to_add)
+                    execute(
+                        "UPDATE employee_ability SET training_completed = %s WHERE employee_id = %s",
+                        (new_value, employee_id),
+                    )
+            else:
+                name_row = query_one(
+                    "SELECT name FROM employee_training_plan WHERE employee_id = %s LIMIT 1",
+                    (employee_id,),
+                )
+                emp_name = name_row["name"] if name_row else ""
+                execute(
+                    "INSERT INTO employee_ability (employee_id, name, training_completed) VALUES (%s, %s, %s)",
+                    (employee_id, emp_name, "、".join(new_trainings)),
+                )
+        else:
+            # 撤销完成 → 从 ability 中移除这些培训
+            if ability and ability["training_completed"]:
+                remove_set = set(_split_training_names(training_plan))
+                remaining = [t for t in _split_training_names(ability["training_completed"]) if t not in remove_set]
+                new_value = "、".join(remaining) if remaining else ""
+                execute(
+                    "UPDATE employee_ability SET training_completed = %s WHERE employee_id = %s",
+                    (new_value, employee_id),
+                )
+        return True
+    except Exception:
+        return False
+
+
+def delete_training(employee_id, training_plan):
+    """删除培训计划"""
+    try:
+        execute(
+            "DELETE FROM employee_training_plan WHERE employee_id = %s AND training_plan = %s",
+            (employee_id, training_plan),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def get_completed_trainings_from_ability():
+    """从 employee_ability 表获取所有员工已完成的培训（按员工分组）"""
+    try:
+        rows = query_all(
+            "SELECT employee_id, name, training_completed FROM employee_ability "
+            "WHERE training_completed IS NOT NULL AND training_completed != '' "
+            "ORDER BY name"
+        )
+        result = []
+        for r in rows:
+            trainings = _split_text(r["training_completed"])
+            result.append({
+                "employee_id": r["employee_id"],
+                "name": r["name"],
+                "trainings": trainings,
+                "count": len(trainings),
+            })
+        return result
+    except Exception:
+        return []
+
+
+# ── 部门列表 ───────────────────────────────────────────
+
+
+def get_departments():
+    """从员工表获取所有部门列表"""
+    try:
+        rows = query_all(
+            "SELECT DISTINCT department FROM employee_talent_data "
+            "WHERE department IS NOT NULL AND department != '' ORDER BY department"
+        )
+        return [r["department"] for r in rows]
+    except Exception:
+        return []

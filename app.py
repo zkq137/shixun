@@ -1,11 +1,10 @@
 import uuid
 import time
-from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 import json as _json
 from urllib.error import HTTPError
 
-from flask import Flask, jsonify, request, redirect
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from backend.wechat_config import (
@@ -27,12 +26,22 @@ from backend.queries import (
     get_risk_employees,
     get_risk_employee_detail,
     get_succession_candidates,
+    get_succession_candidates_filtered,
+    get_departments,
     get_training_plans,
     get_employee_by_no,
     get_potential_list,
     get_potential_by_id,
     update_potential,
+    get_training_list,
+    add_training,
+    update_training_status,
+    delete_training,
+    get_completed_trainings_from_ability,
+    get_position_risk_list,
+    get_employee_risk_list,
 )
+from backend.face_auth import get_face_encoding, compare_faces, decode_base64_image
 
 app = Flask(__name__)
 CORS(app)
@@ -152,6 +161,63 @@ def create_risk_employee_follow_up(employee_id):
         next_action=data.get("nextAction", ""),
     )
     return jsonify(record), 201
+@app.get("/api/succession/candidates")
+def succession_candidates_list():
+    """按岗位名称/员工姓名筛选继任候选人"""
+    position = request.args.get("position", "").strip()
+    candidate = request.args.get("candidate", "").strip()
+    data = get_succession_candidates_filtered(
+        position if position else None,
+        candidate if candidate else None,
+    )
+    return jsonify(data)
+
+
+@app.get("/api/succession/departments")
+def succession_departments():
+    """获取部门列表"""
+    return jsonify(get_departments())
+
+
+@app.post("/api/succession/workflow")
+def succession_workflow():
+    """调用继任计划工作流（Dify）"""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "缺少请求参数"}), 400
+
+    department = data.get("department", "").strip()
+    level = data.get("level", "").strip()
+    position = data.get("position", "").strip()
+
+    if not all([department, level, position]):
+        return jsonify({"error": "请填写完整的岗位信息（部门、层级、岗位名称）"}), 400
+
+    payload = _json.dumps({
+        "inputs": {
+            "bumen": department,
+            "cengji": level,
+            "gangwei": position,
+        },
+        "response_mode": "blocking",
+        "user": "admin",
+    }).encode("utf-8")
+
+    try:
+        req = Request(
+            WORKFLOW_API_URL,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {SUCCESSION_AGENT_ID}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urlopen(req, timeout=300) as resp:
+            result = _json.loads(resp.read())
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": f"工作流调用失败: {str(e)}"}), 502
 
 
 @app.get("/api/training-plans")
@@ -171,6 +237,25 @@ def potential_by_id(employee_id):
         return jsonify({"error": "未找到该员工"}), 404
     return jsonify(result)
 
+
+@app.get("/api/position-risks")
+def position_risks():
+    """岗位风险研判列表"""
+    try:
+        data = get_position_risk_list()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/api/employee-risks")
+def employee_risks():
+    """员工流失风险列表"""
+    try:
+        data = get_employee_risk_list()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.get("/api/employees/<employee_no>")
@@ -243,8 +328,17 @@ def auth_logout():
 
 
 # Dify AI 智能体配置（本地部署）
-DIFY_API_URL = "http://localhost/v1/chat-messages"
+DIFY_API_URL = "http://192.168.125.130/v1/chat-messages"
 DIFY_APP_ID = "app-13oLzUizeaNgxlBqh913Hu9g"
+
+# 培训智能体配置
+TRAINING_AGENT_ID = "app-i76mFs84OFgh5PXW2flJ9UXi"
+
+# 工作流 API 端点（Workflow 模式使用独立的 endpoint）
+WORKFLOW_API_URL = "http://192.168.125.130/v1/workflows/run"
+
+# 继任计划工作流配置
+SUCCESSION_AGENT_ID = "app-8dC5kB9slXrtnTDXBc67xM1u"
 
 
 @app.post("/api/ai/chat")
@@ -368,77 +462,228 @@ def wechat_auth_url():
         f"#wechat_redirect"
     )
     return jsonify({"url": auth_url, "state": state})
+@app.post("/api/ai/training-chat")
+def training_ai_chat():
+    """培训智能体对话（使用独立的培训 Agent）"""
+    data = request.get_json()
+    if not data or "query" not in data:
+        return jsonify({"error": "缺少 query 参数"}), 400
 
-
-@app.route("/api/auth/wechat/callback")
-def wechat_callback():
-    """微信回调：用户扫码后微信302跳转到这里"""
-    code = request.args.get("code")
-    state = request.args.get("state")
-
-    if not code:
-        return "<h2>授权失败，缺少 code 参数</h2>"
+    payload = _json.dumps({
+        "inputs": data.get("inputs", {}),
+        "query": data["query"],
+        "response_mode": "streaming",
+        "conversation_id": data.get("conversation_id", ""),
+        "user": data.get("user", "admin"),
+    }).encode("utf-8")
 
     try:
-        # 1. 用 code 换取 access_token
-        token_params = urlencode({
-            "appid": WECHAT_APP_ID,
-            "secret": WECHAT_APP_SECRET,
-            "code": code,
-            "grant_type": "authorization_code",
-        })
-        req = Request(f"{WECHAT_TOKEN_URL}?{token_params}")
-        with urlopen(req, timeout=10) as resp:
-            token_data = _json.loads(resp.read())
-
-        if "errcode" in token_data:
-            return f"<h2>微信登录失败: {token_data.get('errmsg', '未知错误')}</h2>"
-
-        access_token = token_data["access_token"]
-        openid = token_data["openid"]
-
-        # 2. 获取用户信息
-        user_params = urlencode({
-            "access_token": access_token,
-            "openid": openid,
-        })
-        req2 = Request(f"{WECHAT_USERINFO_URL}?{user_params}")
-        with urlopen(req2, timeout=10) as resp2:
-            user_info = _json.loads(resp2.read())
-
-        # 3. 创建登录 session
-        session_token = uuid.uuid4().hex[:16]
-        qrcode_sessions[session_token] = {
-            "status": "confirmed",
-            "created_at": time.time(),
-            "user": {
-                "openid": openid,
-                "nickname": user_info.get("nickname", "微信用户"),
-                "avatar": user_info.get("headimgurl", ""),
+        req = Request(
+            DIFY_API_URL,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {TRAINING_AGENT_ID}",
+                "Content-Type": "application/json",
             },
-        }
-
-        # 4. 302 跳回前端，附带 session_token
-        return redirect(f"{FRONTEND_SUCCESS_URL}?token={session_token}")
-
+            method="POST",
+        )
+        with urlopen(req, timeout=60) as resp:
+            full_answer = ""
+            conv_id = ""
+            for line in resp:
+                line = line.decode("utf-8").strip()
+                if line.startswith("data: "):
+                    try:
+                        chunk = _json.loads(line[6:])
+                        if "answer" in chunk:
+                            full_answer += chunk["answer"]
+                        if chunk.get("conversation_id"):
+                            conv_id = chunk["conversation_id"]
+                        if chunk.get("event") == "message_end":
+                            break
+                    except _json.JSONDecodeError:
+                        continue
+        return jsonify({
+            "answer": full_answer,
+            "conversation_id": conv_id,
+        })
     except Exception as e:
-        return f"<h2>微信登录异常: {str(e)}</h2>"
+        return jsonify({"error": f"培训智能体调用失败: {str(e)}"}), 502
 
 
-@app.get("/api/auth/wechat/user/<token>")
-def wechat_user_info(token):
-    """前端轮询：获取登录后的用户信息"""
-    session = qrcode_sessions.get(token)
-    if not session or session["status"] != "confirmed":
-        return jsonify({"error": "未登录或已过期"}), 401
-    now = time.time()
-    if now - session["created_at"] > 86400:
-        del qrcode_sessions[token]
-        return jsonify({"error": "会话已过期"}), 401
-    return jsonify({
-        "status": "confirmed",
-        "user": session.get("user", {}),
-    })
+# ── 培训计划 CRUD API ──────────────────────────────────
+@app.get("/api/training/list")
+def training_list():
+    """获取培训计划列表"""
+    try:
+        data = get_training_list()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+@app.post("/api/training/add")
+def training_add():
+    """添加培训计划"""
+    data = request.get_json()
+    if not data or not all(k in data for k in ("employee_id", "name", "training_plan")):
+        return jsonify({"error": "缺少必填参数"}), 400
+    ok = add_training(data["employee_id"], data["name"], data["training_plan"])
+    if ok:
+        return jsonify({"status": "ok", "message": "培训计划添加成功"})
+    return jsonify({"error": "添加失败"}), 500
+@app.post("/api/training/update-status")
+def training_update_status():
+    """更新培训完成状态"""
+    data = request.get_json()
+    if not data or not all(k in data for k in ("employee_id", "training_plan", "is_completed")):
+        return jsonify({"error": "缺少必填参数"}), 400
+    ok = update_training_status(data["employee_id"], data["training_plan"], data["is_completed"])
+    if ok:
+        return jsonify({"status": "ok", "message": "状态更新成功"})
+    return jsonify({"error": "更新失败"}), 500
+@app.post("/api/training/delete")
+def training_delete():
+    """删除培训计划"""
+    data = request.get_json()
+    if not data or not all(k in data for k in ("employee_id", "training_plan")):
+        return jsonify({"error": "缺少必填参数"}), 400
+    ok = delete_training(data["employee_id"], data["training_plan"])
+    if ok:
+        return jsonify({"status": "ok", "message": "培训计划已删除"})
+    return jsonify({"error": "删除失败"}), 500
+
+
+@app.get("/api/training/completed-abilities")
+def training_completed_abilities():
+    """获取能力表中员工已完成的培训"""
+    data = get_completed_trainings_from_ability()
+    return jsonify(data)
+
+
+# ── 扫脸登录 API ───────────────────────────────────────
+
+
+@app.post("/api/face/register")
+def face_register():
+    """扫脸注册：上传人脸照片（支持多帧），提取特征并存储"""
+    data = request.get_json()
+    if not data or "username" not in data:
+        return jsonify({"error": "缺少必填参数: username"}), 400
+
+    username = data["username"].strip()
+    if not username:
+        return jsonify({"error": "用户名不能为空"}), 400
+
+    # 支持多帧（images 数组）和单帧（image）
+    images = data.get("images", [])
+    if not images and "image" in data:
+        images = [data["image"]]
+    if not images:
+        return jsonify({"error": "缺少必填参数: image 或 images"}), 400
+
+    import json
+    from backend.db import query_one, execute
+
+    # 检查用户名是否已存在
+    existing = query_one(
+        "SELECT id FROM face_users WHERE username = %s", (username,)
+    )
+    if existing:
+        return jsonify({"error": "用户名已存在"}), 409
+
+    # 对每帧提取特征，取平均值
+    encodings = []
+    errors = []
+    for i, img_b64 in enumerate(images):
+        enc, msg = get_face_encoding(img_b64)
+        if enc is None:
+            errors.append(f"第{i + 1}帧: {msg}")
+        else:
+            encodings.append(enc)
+
+    if not encodings:
+        detail = "；".join(errors) if errors else "特征提取失败"
+        return jsonify({"error": f"所有帧均未检测到人脸。{detail}"}), 400
+
+    # 多帧特征取平均
+    import numpy as np
+    avg_encoding = np.mean(encodings, axis=0).tolist()
+
+    affected = execute(
+        "INSERT INTO face_users (username, face_encoding) VALUES (%s, %s)",
+        (username, json.dumps(avg_encoding)),
+    )
+    if affected:
+        frames_used = f"（基于 {len(encodings)}/{len(images)} 帧）"
+        return jsonify({"status": "ok", "message": f"人脸注册成功 {frames_used}"})
+    return jsonify({"error": "注册失败"}), 500
+
+
+@app.post("/api/face/login")
+def face_login():
+    """扫脸登录：上传人脸照片，与数据库中的特征进行比对"""
+    data = request.get_json()
+    if not data or "image" not in data:
+        return jsonify({"error": "缺少必填参数: image"}), 400
+
+    image_b64 = data["image"]
+    encoding, msg = get_face_encoding(image_b64)
+    if encoding is None:
+        return jsonify({"error": msg}), 400
+
+    # 从数据库获取所有用户的人脸特征
+    from backend.db import query_all
+
+    import json
+
+    users = query_all("SELECT id, username, face_encoding FROM face_users")
+    if not users:
+        return jsonify({"error": "尚未注册任何用户，请先注册"}), 404
+
+    best_match = None
+    best_similarity = 0
+
+    for user in users:
+        known_encoding = json.loads(user["face_encoding"])
+        match, similarity = compare_faces(known_encoding, encoding)
+        if match and similarity > best_similarity:
+            best_similarity = similarity
+            best_match = user["username"]
+
+    if best_match:
+        return jsonify({
+            "status": "ok",
+            "message": "登录成功",
+            "username": best_match,
+            "similarity": round(best_similarity, 3),
+        })
+    else:
+        return jsonify({"error": "人脸不匹配，请重试或使用其他方式登录"}), 401
+
+
+@app.get("/api/face/users")
+def face_users_list():
+    """获取已注册的人脸用户列表（仅返回用户名）"""
+    from backend.db import query_all
+
+    users = query_all("SELECT id, username, created_at FROM face_users ORDER BY created_at DESC")
+    return jsonify(users)
+
+
+@app.post("/api/face/delete")
+def face_user_delete():
+    """删除指定人脸用户"""
+    data = request.get_json()
+    if not data or "username" not in data:
+        return jsonify({"error": "缺少必填参数: username"}), 400
+
+    from backend.db import execute
+
+    affected = execute(
+        "DELETE FROM face_users WHERE username = %s", (data["username"],)
+    )
+    if affected:
+        return jsonify({"status": "ok", "message": "用户已删除"})
+    return jsonify({"error": "用户不存在"}), 404
 
 
 if __name__ == "__main__":

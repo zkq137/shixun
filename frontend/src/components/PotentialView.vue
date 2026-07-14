@@ -1,45 +1,187 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import * as echarts from 'echarts'
 import { marked } from 'marked'
 
-// 配置 marked
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-})
+marked.setOptions({ breaks: true, gfm: true })
 
+// ── 状态 ──
+const activeTab = ref('potential')  // 'potential' | 'risk'
 const potentialList = ref([])
+const positionRisks = ref([])
+const employeeRisks = ref([])
 const loading = ref(true)
 const error = ref('')
 
-// AI 聊天相关
+// 搜索
+const searchQuery = ref('')
+
+const filteredPotentialList = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return potentialList.value
+  return potentialList.value.filter(
+    emp => emp.employee_id.toLowerCase().includes(q) || emp.name.includes(q)
+  )
+})
+
+const filteredEmployeeRisks = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return employeeRisks.value
+  return employeeRisks.value.filter(
+    emp =>
+      emp.employee_id.toLowerCase().includes(q) ||
+      emp.name.includes(q) ||
+      (emp.department && emp.department.includes(q))
+  )
+})
+
+// AI 聊天
 const chatMessages = ref([
-  { role: 'assistant', content: '您好！我是**人才潜力分析助手**，可以回答关于员工潜力数据的问题。\n\n例如：\n- "对某员工进行潜力评估"\n- "S级高潜员工有哪些？"\n- "各等级人数分布如何？"' }
+  {
+    role: 'assistant',
+    content: '您好！我是**人才分析与风险研判助手** 🧠，可以帮您：\n\n' +
+      '**人才潜力评估：**\n' +
+      '• 对某员工进行潜力评估\n' +
+      '**岗位风险研判：**\n' +
+      '• 对某岗位进行风险研判\n' +
+      '请问您想了解什么？'
+  }
 ])
 const userInput = ref('')
 const chatLoading = ref(false)
 const conversationId = ref('')
+const chatBox = ref(null)
 
-// 渲染 Markdown，过滤 AI 的思考标签
 function renderMarkdown(text) {
   if (!text) return ''
-  // 过滤 <think>...</think> 思考链标签
   let clean = text.replace(/<think>[\s\S]*?<\/think>/g, '')
-  // 过滤纯 think 开头无闭合的情况
   clean = clean.replace(/^<think>.*$/gm, '')
   return marked.parse(clean)
 }
 
+// ── ECharts ──
+const potentialChartRef = ref(null)
+const riskPieChartRef = ref(null)
+
+let potentialChart = null
+let riskPieChart = null
+
+function initCharts() {
+  nextTick(() => {
+    if (activeTab.value === 'potential') {
+      renderPotentialPie()
+    } else {
+      renderRiskPie()
+    }
+  })
+}
+
+function getOrCreateChart(ref) {
+  if (!ref.value) return null
+  // 用 ECharts 自带的 API 检查 DOM 上是否已有实例
+  let instance = echarts.getInstanceByDom(ref.value)
+  if (!instance) instance = echarts.init(ref.value)
+  return instance
+}
+
+function renderPotentialPie() {
+  potentialChart = getOrCreateChart(potentialChartRef)
+  if (!potentialChart) return
+  const levels = ['S级（高潜）', 'A级（优秀）', 'B级（合格）', 'C级（待提升）']
+  const count = levels.map(l => potentialList.value.filter(e => e.potential_level === l).length)
+  potentialChart.setOption({
+    tooltip: { trigger: 'item', formatter: '{b}: {c}人 ({d}%)' },
+    legend: { bottom: 0, textStyle: { fontSize: 12 } },
+    series: [{
+      type: 'pie',
+      radius: ['40%', '70%'],
+      center: ['50%', '45%'],
+      avoidLabelOverlap: true,
+      itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+      label: { show: false },
+      emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
+      data: [
+        { value: count[0] || 1, name: 'S级（高潜）', itemStyle: { color: '#16a34a' } },
+        { value: count[1] || 1, name: 'A级（优秀）', itemStyle: { color: '#2563eb' } },
+        { value: count[2] || 1, name: 'B级（合格）', itemStyle: { color: '#d97706' } },
+        { value: count[3] || 1, name: 'C级（待提升）', itemStyle: { color: '#dc2626' } },
+      ]
+    }]
+  })
+}
+
+function renderRiskPie() {
+  riskPieChart = getOrCreateChart(riskPieChartRef)
+  if (!riskPieChart) return
+  const levels = ['高风险', '中风险', '低风险']
+  const count = levels.map(l => positionRisks.value.filter(r => r.risk_level === l).length)
+  riskPieChart.setOption({
+    tooltip: { trigger: 'item', formatter: '{b}: {c}个 ({d}%)' },
+    legend: { bottom: 0, textStyle: { fontSize: 12 } },
+    series: [{
+      type: 'pie',
+      radius: ['40%', '70%'],
+      center: ['50%', '45%'],
+      avoidLabelOverlap: true,
+      itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+      label: { show: false },
+      emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
+      data: [
+        { value: count[0] || 1, name: '高风险', itemStyle: { color: '#dc2626' } },
+        { value: count[1] || 1, name: '中风险', itemStyle: { color: '#d97706' } },
+        { value: count[2] || 1, name: '低风险', itemStyle: { color: '#16a34a' } },
+      ]
+    }]
+  })
+}
+
+function resizeCharts() {
+  [potentialChart, riskPieChart].forEach(c => c?.resize())
+}
+
+watch(activeTab, () => {
+  nextTick(() => {
+    if (activeTab.value === 'potential') {
+      renderPotentialPie()
+    } else {
+      renderRiskPie()
+    }
+  })
+})
+
 onMounted(async () => {
+  await Promise.all([fetchPotential(), fetchRisks()])
+  loading.value = false
+  initCharts()
+  window.addEventListener('resize', resizeCharts)
+})
+
+onUnmounted(() => {
+  [potentialChart, riskPieChart].forEach(c => c?.dispose())
+  window.removeEventListener('resize', resizeCharts)
+})
+
+async function fetchPotential() {
   try {
     const resp = await fetch('/api/potential')
     potentialList.value = await resp.json()
   } catch {
     error.value = '加载潜力数据失败'
-  } finally {
-    loading.value = false
   }
-})
+}
+
+async function fetchRisks() {
+  try {
+    const [posResp, empResp] = await Promise.all([
+      fetch('/api/position-risks'),
+      fetch('/api/employee-risks'),
+    ])
+    positionRisks.value = await posResp.json()
+    employeeRisks.value = await empResp.json()
+  } catch {
+    // ignore
+  }
+}
 
 function getLevelTag(level) {
   if (!level) return { cls: 'tag-default', label: '未评级' }
@@ -50,6 +192,21 @@ function getLevelTag(level) {
     'C级（待提升）': { cls: 'tag-c', label: 'C级' },
   }
   return map[level] || { cls: 'tag-default', label: level }
+}
+
+function getRiskLevelTag(level) {
+  if (!level) return { cls: 'risk-low', label: '未知' }
+  if (level.includes('高')) return { cls: 'risk-high', label: '高风险' }
+  if (level.includes('中')) return { cls: 'risk-mid', label: '中风险' }
+  return { cls: 'risk-low', label: '低风险' }
+}
+
+function getScoreColor(score) {
+  if (!score) return '#94a3b8'
+  const s = Number(score)
+  if (s >= 70) return '#dc2626'
+  if (s >= 40) return '#d97706'
+  return '#16a34a'
 }
 
 async function sendMessage() {
@@ -68,7 +225,9 @@ async function sendMessage() {
         query: text,
         conversation_id: conversationId.value,
         inputs: {
-          potential_data: JSON.stringify(potentialList.value.slice(0, 20))
+          potential_data: JSON.stringify(potentialList.value.slice(0, 20)),
+          position_risk_data: JSON.stringify(positionRisks.value.slice(0, 20)),
+          employee_risk_data: JSON.stringify(employeeRisks.value.slice(0, 20)),
         }
       })
     })
@@ -79,6 +238,8 @@ async function sendMessage() {
     } else if (data.error) {
       chatMessages.value.push({ role: 'assistant', content: '❌ ' + data.error })
     }
+    // 智能体可能修改了数据库，同步刷新左侧列表
+    await Promise.all([fetchPotential(), fetchRisks()])
   } catch {
     chatMessages.value.push({ role: 'assistant', content: '❌ 网络错误，请稍后重试' })
   } finally {
@@ -89,55 +250,153 @@ async function sendMessage() {
 
 <template>
   <div class="potential-layout">
-    <!-- 左侧：潜力数据列表 -->
+    <!-- 左侧：内容区 -->
     <div class="potential-main">
-      <div class="toolbar">
-        <div class="toolbar-left">
-          <span class="toolbar-title">员工潜力列表</span>
-          <span class="toolbar-count">共 {{ potentialList.length }} 人</span>
+      <!-- 标签切换 -->
+      <div class="tab-bar">
+        <div
+          :class="['tab-item', { active: activeTab === 'potential' }]"
+          @click="activeTab = 'potential'"
+        >
+          🧠 人才潜力评估
+        </div>
+        <div
+          :class="['tab-item', { active: activeTab === 'risk' }]"
+          @click="activeTab = 'risk'"
+        >
+          ⚠️ 岗位风险研判
         </div>
       </div>
 
       <div v-if="loading" class="loading-state">加载中...</div>
       <div v-else-if="error" class="error-state">{{ error }}</div>
 
-      <div v-else class="table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>工号</th>
-              <th>姓名</th>
-              <th>潜力评分</th>
-              <th>潜力等级</th>
-              <th>人才标签</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="emp in potentialList" :key="emp.employee_id">
-              <td class="cell-id">{{ emp.employee_id }}</td>
-              <td>{{ emp.name }}</td>
-              <td class="cell-score">
-                <span class="score-bar" :style="{ width: (emp.potential_score || 0) + '%' }"></span>
-                <span class="score-text">{{ emp.potential_score ?? '-' }}</span>
-              </td>
-              <td>
-                <span :class="['tag', getLevelTag(emp.potential_level).cls]">
-                  {{ getLevelTag(emp.potential_level).label }}
-                </span>
-              </td>
-              <td>{{ emp.talent_tag || '-' }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <!-- ====== 人才潜力评估 Tab ====== -->
+      <template v-if="activeTab === 'potential'">
+        <!-- 图表区域 -->
+        <div class="charts-row">
+          <div class="chart-box">
+            <h4 class="chart-title">📊 潜力等级分布</h4>
+            <div ref="potentialChartRef" class="chart-canvas"></div>
+          </div>
+        </div>
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <span class="toolbar-title">员工潜力列表</span>
+            <span class="toolbar-count">共 {{ filteredPotentialList.length }} 人</span>
+          </div>
+          <div class="search-box">
+            <input
+              v-model="searchQuery"
+              class="search-input"
+              placeholder="🔍 搜索工号或姓名..."
+            />
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>工号</th>
+                <th>姓名</th>
+                <th>潜力评分</th>
+                <th>潜力等级</th>
+                <th>人才标签</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="emp in filteredPotentialList" :key="emp.employee_id">
+                <td class="cell-id">{{ emp.employee_id }}</td>
+                <td>{{ emp.name }}</td>
+                <td class="cell-score">
+                  <span class="score-bar" :style="{ width: (emp.potential_score || 0) + '%' }"></span>
+                  <span class="score-text">{{ emp.potential_score ?? '-' }}</span>
+                </td>
+                <td>
+                  <span :class="['tag', getLevelTag(emp.potential_level).cls]">
+                    {{ getLevelTag(emp.potential_level).label }}
+                  </span>
+                </td>
+                <td>{{ emp.talent_tag || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+
+      <!-- ====== 岗位风险研判 Tab ====== -->
+      <template v-if="activeTab === 'risk'">
+        <!-- 图表区域 -->
+        <div class="charts-row">
+          <div class="chart-box">
+            <h4 class="chart-title">🔴 岗位风险等级分布</h4>
+            <div ref="riskPieChartRef" class="chart-canvas"></div>
+          </div>
+        </div>
+        <!-- 岗位风险概览 -->
+        <div class="risk-summary">
+          <div class="risk-stat-card high">
+            <span class="risk-stat-num">{{ positionRisks.filter(r => r.risk_level === '高风险').length }}</span>
+            <span class="risk-stat-label">高风险岗位</span>
+          </div>
+          <div class="risk-stat-card low">
+            <span class="risk-stat-num">{{ positionRisks.filter(r => r.risk_level === '低风险').length }}</span>
+            <span class="risk-stat-label">低风险岗位</span>
+          </div>
+          <div class="risk-stat-card total">
+            <span class="risk-stat-num">{{ positionRisks.length }}</span>
+            <span class="risk-stat-label">评估岗位总数</span>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <span class="toolbar-title">岗位风险排名</span>
+          </div>
+        </div>
+        <div class="table-wrap risk-table">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>排名</th>
+                <th>岗位名称</th>
+                <th>风险评分</th>
+                <th>风险等级</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(pos, idx) in positionRisks" :key="pos.position_name">
+                <td class="cell-rank">{{ idx + 1 }}</td>
+                <td>{{ pos.position_name }}</td>
+                <td>
+                  <div class="risk-score-bar">
+                    <div
+                      class="risk-score-fill"
+                      :style="{ width: (pos.total_risk_score || 0) + '%', background: getScoreColor(pos.total_risk_score) }"
+                    ></div>
+                    <span class="risk-score-text">{{ pos.total_risk_score ?? '-' }}</span>
+                  </div>
+                </td>
+                <td>
+                  <span :class="['risk-badge', getRiskLevelTag(pos.risk_level).cls]">
+                    {{ getRiskLevelTag(pos.risk_level).label }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+
+      </template>
     </div>
 
     <!-- 右侧：AI 对话助手 -->
     <div class="chat-sidebar">
       <div class="chat-header">
-        <span class="chat-avatar">🤖</span>
+        <span class="chat-avatar">🧠</span>
         <div>
-          <p class="chat-title">人才潜力分析助手</p>
+          <p class="chat-title">人才分析与风险研判助手</p>
           <p class="chat-subtitle">AI 智能体</p>
         </div>
       </div>
@@ -159,7 +418,7 @@ async function sendMessage() {
         <input
           v-model="userInput"
           class="chat-input"
-          placeholder="输入你的问题..."
+          placeholder="询问潜力评估或风险分析..."
           @keyup.enter="sendMessage"
           :disabled="chatLoading"
         />
@@ -172,6 +431,38 @@ async function sendMessage() {
 </template>
 
 <style scoped>
+/* ── 图表样式 ── */
+.charts-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.chart-box {
+  flex: 1;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  min-width: 0;
+}
+
+.chart-box-third {
+  flex: 1;
+}
+
+.chart-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.chart-canvas {
+  width: 100%;
+  height: 200px;
+}
+
 .potential-layout {
   display: flex;
   gap: 20px;
@@ -185,11 +476,79 @@ async function sendMessage() {
   min-width: 0;
 }
 
+/* ── 标签栏 ── */
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 4px;
+}
+
+.tab-item {
+  flex: 1;
+  text-align: center;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab-item:hover {
+  background: #f1f5f9;
+}
+
+.tab-item.active {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ── 风险统计卡片 ── */
+.risk-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.risk-stat-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.risk-stat-card.high { border-left: 4px solid #dc2626; }
+.risk-stat-card.low { border-left: 4px solid #16a34a; }
+.risk-stat-card.emp { border-left: 4px solid #d97706; }
+.risk-stat-card.total { border-left: 4px solid #6366f1; }
+
+.risk-stat-num {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.risk-stat-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* ── 工具栏 ── */
 .toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .toolbar-left {
@@ -199,13 +558,40 @@ async function sendMessage() {
 }
 
 .toolbar-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: #1e293b;
 }
 
 .toolbar-count {
   font-size: 13px;
+  color: #94a3b8;
+}
+
+/* ── 搜索框 ── */
+.search-box {
+  display: flex;
+  align-items: center;
+}
+
+.search-input {
+  padding: 8px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  width: 220px;
+  outline: none;
+  transition: all 0.2s;
+  background: #f8fafc;
+}
+
+.search-input:focus {
+  border-color: #6366f1;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.search-input::placeholder {
   color: #94a3b8;
 }
 
@@ -225,6 +611,11 @@ async function sendMessage() {
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   background: #fff;
+  min-height: 0;
+}
+
+.risk-table {
+  max-height: 320px;
 }
 
 .data-table {
@@ -237,7 +628,7 @@ async function sendMessage() {
   position: sticky;
   top: 0;
   background: #f8fafc;
-  padding: 12px 16px;
+  padding: 10px 14px;
   text-align: left;
   font-weight: 600;
   color: #475569;
@@ -246,7 +637,7 @@ async function sendMessage() {
 }
 
 .data-table td {
-  padding: 10px 16px;
+  padding: 9px 14px;
   border-bottom: 1px solid #f1f5f9;
   color: #334155;
 }
@@ -261,6 +652,12 @@ async function sendMessage() {
   color: #64748b;
 }
 
+.cell-rank {
+  font-weight: 600;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
 .cell-score {
   position: relative;
   display: flex;
@@ -270,12 +667,12 @@ async function sendMessage() {
 
 .score-bar {
   position: absolute;
-  left: 16px;
+  left: 14px;
   height: 6px;
   background: linear-gradient(90deg, #6366f1, #8b5cf6);
   border-radius: 3px;
   opacity: 0.15;
-  max-width: calc(100% - 32px);
+  max-width: calc(100% - 28px);
 }
 
 .score-text {
@@ -284,6 +681,52 @@ async function sendMessage() {
   font-family: 'SF Mono', 'Consolas', monospace;
 }
 
+/* ── 风险进度条 ── */
+.risk-score-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.risk-score-fill {
+  height: 6px;
+  border-radius: 3px;
+  opacity: 0.2;
+  max-width: 120px;
+  min-width: 8px;
+}
+
+.risk-score-text {
+  font-weight: 600;
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-size: 12px;
+}
+
+.risk-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.risk-badge.risk-high {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.risk-badge.risk-mid {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.risk-badge.risk-low {
+  background: #dcfce7;
+  color: #166534;
+}
+
+/* ── 标签 ── */
 .tag {
   display: inline-block;
   padding: 2px 10px;
@@ -318,7 +761,6 @@ async function sendMessage() {
 }
 
 /* ── AI 聊天侧栏 ── */
-
 .chat-sidebar {
   width: 360px;
   flex-shrink: 0;
@@ -383,25 +825,29 @@ async function sendMessage() {
   word-break: break-word;
 }
 
-/* Markdown 渲染内容样式 */
 .msg-bubble :deep(p) {
   margin: 0 0 8px;
 }
+
 .msg-bubble :deep(p:last-child) {
   margin-bottom: 0;
 }
+
 .msg-bubble :deep(strong) {
   font-weight: 600;
   color: inherit;
 }
+
 .msg-bubble :deep(ul),
 .msg-bubble :deep(ol) {
   margin: 4px 0 8px;
   padding-left: 20px;
 }
+
 .msg-bubble :deep(li) {
   margin-bottom: 4px;
 }
+
 .msg-bubble :deep(code) {
   background: rgba(99, 102, 241, 0.1);
   padding: 2px 6px;
@@ -409,6 +855,7 @@ async function sendMessage() {
   font-family: 'SF Mono', 'Consolas', monospace;
   font-size: 12px;
 }
+
 .msg-bubble :deep(pre) {
   background: #1e293b;
   color: #e2e8f0;
@@ -417,12 +864,14 @@ async function sendMessage() {
   overflow-x: auto;
   margin: 8px 0;
 }
+
 .msg-bubble :deep(pre code) {
   background: none;
   padding: 0;
   color: inherit;
   font-size: 12px;
 }
+
 .msg-bubble :deep(h1),
 .msg-bubble :deep(h2),
 .msg-bubble :deep(h3),
@@ -430,6 +879,7 @@ async function sendMessage() {
   margin: 12px 0 6px;
   font-weight: 600;
 }
+
 .msg-bubble :deep(h1) { font-size: 16px; }
 .msg-bubble :deep(h2) { font-size: 15px; }
 .msg-bubble :deep(h3) { font-size: 14px; }
@@ -441,22 +891,26 @@ async function sendMessage() {
   border-radius: 0 6px 6px 0;
   color: #64748b;
 }
+
 .msg-bubble :deep(table) {
   border-collapse: collapse;
   width: 100%;
   margin: 8px 0;
   font-size: 12px;
 }
+
 .msg-bubble :deep(th),
 .msg-bubble :deep(td) {
   border: 1px solid #e2e8f0;
   padding: 6px 10px;
   text-align: left;
 }
+
 .msg-bubble :deep(th) {
   background: #f1f5f9;
   font-weight: 600;
 }
+
 .msg-bubble :deep(hr) {
   border: none;
   border-top: 1px solid #e2e8f0;
@@ -509,23 +963,24 @@ async function sendMessage() {
 }
 
 .chat-send {
-  padding: 8px 16px;
+  padding: 8px 18px;
+  border: none;
   background: #6366f1;
   color: #fff;
-  border: none;
   border-radius: 8px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: opacity 0.2s;
+  white-space: nowrap;
 }
 
 .chat-send:hover {
-  background: #4f46e5;
+  opacity: 0.9;
 }
 
 .chat-send:disabled {
-  background: #cbd5e1;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 </style>
