@@ -1,8 +1,6 @@
 <script setup>
 import { ref } from 'vue'
 import LoginView from './components/LoginView.vue'
-import OverviewView from './components/OverviewView.vue'
-import NineBoxView from './components/NineBoxView.vue'
 import SuccessionView from './components/SuccessionView.vue'
 import RiskView from './components/RiskView.vue'
 import TrainingView from './components/TrainingView.vue'
@@ -11,11 +9,9 @@ import PotentialView from './components/PotentialView.vue'
 
 // 从 localStorage 恢复登录状态
 const isLoggedIn = ref(localStorage.getItem('shixun_logged_in') === 'true')
-const currentView = ref(localStorage.getItem('shixun_current_view') || 'overview')
+const currentView = ref(localStorage.getItem('shixun_current_view') || 'potential')
 
 const navItems = [
-  { id: 'overview', icon: '📊', label: '概览驾驶舱' },
-  { id: 'ninebox', icon: '🎯', label: '人才九宫格' },
   { id: 'potential', icon: '🧠', label: '潜力·风险研判' },
   { id: 'succession', icon: '👥', label: '继任计划' },
   { id: 'training', icon: '📚', label: '培训发展' },
@@ -86,18 +82,14 @@ async function handleLogout() {
     <main class="main-content">
       <header class="content-header">
         <h1>
-          <span v-if="currentView === 'overview'">📊 概览驾驶舱</span>
-          <span v-else-if="currentView === 'ninebox'">🎯 人才九宫格</span>
-          <span v-else-if="currentView === 'potential'">🧠 人才潜力评估与岗位风险研判</span>
+          <span v-if="currentView === 'potential'">🧠 人才潜力评估与岗位风险研判</span>
           <span v-else-if="currentView === 'succession'">👥 继任计划</span>
           <span v-else-if="currentView === 'training'">📚 培训发展</span>
           <span v-else-if="currentView === 'risk'">⚠️ 风险预警</span>
           <span v-else-if="currentView === 'employee'">🔍 员工信息查询</span>
         </h1>
       </header>
-      <OverviewView v-if="currentView === 'overview'" />
-      <NineBoxView v-else-if="currentView === 'ninebox'" />
-      <PotentialView v-else-if="currentView === 'potential'" />
+      <PotentialView v-if="currentView === 'potential'" />
       <SuccessionView v-else-if="currentView === 'succession'" />
       <TrainingView v-else-if="currentView === 'training'" />
       <RiskView v-else-if="currentView === 'risk'" />

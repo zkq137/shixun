@@ -473,6 +473,28 @@ def delete_training(employee_id, training_plan):
         return False
 
 
+def get_completed_trainings_from_ability():
+    """从 employee_ability 表获取所有员工已完成的培训（按员工分组）"""
+    try:
+        rows = query_all(
+            "SELECT employee_id, name, training_completed FROM employee_ability "
+            "WHERE training_completed IS NOT NULL AND training_completed != '' "
+            "ORDER BY name"
+        )
+        result = []
+        for r in rows:
+            trainings = _split_text(r["training_completed"])
+            result.append({
+                "employee_id": r["employee_id"],
+                "name": r["name"],
+                "trainings": trainings,
+                "count": len(trainings),
+            })
+        return result
+    except Exception:
+        return []
+
+
 # ── 部门列表 ───────────────────────────────────────────
 
 

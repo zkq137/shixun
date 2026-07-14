@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import * as echarts from 'echarts'
 import { marked } from 'marked'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -49,6 +50,7 @@ const chatMessages = ref([
 const userInput = ref('')
 const chatLoading = ref(false)
 const conversationId = ref('')
+const chatBox = ref(null)
 
 function renderMarkdown(text) {
   if (!text) return ''
@@ -57,9 +59,106 @@ function renderMarkdown(text) {
   return marked.parse(clean)
 }
 
+// ── ECharts ──
+const potentialChartRef = ref(null)
+const riskPieChartRef = ref(null)
+
+let potentialChart = null
+let riskPieChart = null
+
+function initCharts() {
+  nextTick(() => {
+    if (activeTab.value === 'potential') {
+      renderPotentialPie()
+    } else {
+      renderRiskPie()
+    }
+  })
+}
+
+function getOrCreateChart(ref) {
+  if (!ref.value) return null
+  // 用 ECharts 自带的 API 检查 DOM 上是否已有实例
+  let instance = echarts.getInstanceByDom(ref.value)
+  if (!instance) instance = echarts.init(ref.value)
+  return instance
+}
+
+function renderPotentialPie() {
+  potentialChart = getOrCreateChart(potentialChartRef)
+  if (!potentialChart) return
+  const levels = ['S级（高潜）', 'A级（优秀）', 'B级（合格）', 'C级（待提升）']
+  const count = levels.map(l => potentialList.value.filter(e => e.potential_level === l).length)
+  potentialChart.setOption({
+    tooltip: { trigger: 'item', formatter: '{b}: {c}人 ({d}%)' },
+    legend: { bottom: 0, textStyle: { fontSize: 12 } },
+    series: [{
+      type: 'pie',
+      radius: ['40%', '70%'],
+      center: ['50%', '45%'],
+      avoidLabelOverlap: true,
+      itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+      label: { show: false },
+      emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
+      data: [
+        { value: count[0] || 1, name: 'S级（高潜）', itemStyle: { color: '#16a34a' } },
+        { value: count[1] || 1, name: 'A级（优秀）', itemStyle: { color: '#2563eb' } },
+        { value: count[2] || 1, name: 'B级（合格）', itemStyle: { color: '#d97706' } },
+        { value: count[3] || 1, name: 'C级（待提升）', itemStyle: { color: '#dc2626' } },
+      ]
+    }]
+  })
+}
+
+function renderRiskPie() {
+  riskPieChart = getOrCreateChart(riskPieChartRef)
+  if (!riskPieChart) return
+  const levels = ['高风险', '中风险', '低风险']
+  const count = levels.map(l => positionRisks.value.filter(r => r.risk_level === l).length)
+  riskPieChart.setOption({
+    tooltip: { trigger: 'item', formatter: '{b}: {c}个 ({d}%)' },
+    legend: { bottom: 0, textStyle: { fontSize: 12 } },
+    series: [{
+      type: 'pie',
+      radius: ['40%', '70%'],
+      center: ['50%', '45%'],
+      avoidLabelOverlap: true,
+      itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+      label: { show: false },
+      emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
+      data: [
+        { value: count[0] || 1, name: '高风险', itemStyle: { color: '#dc2626' } },
+        { value: count[1] || 1, name: '中风险', itemStyle: { color: '#d97706' } },
+        { value: count[2] || 1, name: '低风险', itemStyle: { color: '#16a34a' } },
+      ]
+    }]
+  })
+}
+
+function resizeCharts() {
+  [potentialChart, riskPieChart].forEach(c => c?.resize())
+}
+
+watch(activeTab, () => {
+  nextTick(() => {
+    if (activeTab.value === 'potential') {
+      renderPotentialPie()
+    } else {
+      renderRiskPie()
+    }
+  })
+})
+
 onMounted(async () => {
   await Promise.all([fetchPotential(), fetchRisks()])
   loading.value = false
+  initCharts()
+  window.addEventListener('resize', resizeCharts)
+})
+
+onUnmounted(() => {
+  [potentialChart, riskPieChart].forEach(c => c?.dispose())
+  window.removeEventListener('resize', resizeCharts)
 })
 
 async function fetchPotential() {
@@ -174,6 +273,13 @@ async function sendMessage() {
 
       <!-- ====== 人才潜力评估 Tab ====== -->
       <template v-if="activeTab === 'potential'">
+        <!-- 图表区域 -->
+        <div class="charts-row">
+          <div class="chart-box">
+            <h4 class="chart-title">📊 潜力等级分布</h4>
+            <div ref="potentialChartRef" class="chart-canvas"></div>
+          </div>
+        </div>
         <div class="toolbar">
           <div class="toolbar-left">
             <span class="toolbar-title">员工潜力列表</span>
@@ -220,6 +326,13 @@ async function sendMessage() {
 
       <!-- ====== 岗位风险研判 Tab ====== -->
       <template v-if="activeTab === 'risk'">
+        <!-- 图表区域 -->
+        <div class="charts-row">
+          <div class="chart-box">
+            <h4 class="chart-title">🔴 岗位风险等级分布</h4>
+            <div ref="riskPieChartRef" class="chart-canvas"></div>
+          </div>
+        </div>
         <!-- 岗位风险概览 -->
         <div class="risk-summary">
           <div class="risk-stat-card high">
@@ -229,10 +342,6 @@ async function sendMessage() {
           <div class="risk-stat-card low">
             <span class="risk-stat-num">{{ positionRisks.filter(r => r.risk_level === '低风险').length }}</span>
             <span class="risk-stat-label">低风险岗位</span>
-          </div>
-          <div class="risk-stat-card emp">
-            <span class="risk-stat-num">{{ employeeRisks.filter(r => r.attrition_risk === '高风险').length }}</span>
-            <span class="risk-stat-label">高流失风险员工</span>
           </div>
           <div class="risk-stat-card total">
             <span class="risk-stat-num">{{ positionRisks.length }}</span>
@@ -278,53 +387,7 @@ async function sendMessage() {
           </table>
         </div>
 
-        <!-- 员工流失风险 -->
-        <div class="toolbar" style="margin-top:16px">
-          <div class="toolbar-left">
-            <span class="toolbar-title">员工流失风险</span>
-            <span class="toolbar-count">共 {{ filteredEmployeeRisks.length }} 人</span>
-          </div>
-          <div class="search-box">
-            <input
-              v-model="searchQuery"
-              class="search-input"
-              placeholder="🔍 搜索工号、姓名或部门..."
-            />
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>工号</th>
-                <th>姓名</th>
-                <th>部门</th>
-                <th>当前岗位</th>
-                <th>流失风险分</th>
-                <th>流失风险</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="emp in filteredEmployeeRisks" :key="emp.employee_id">
-                <td class="cell-id">{{ emp.employee_id }}</td>
-                <td>{{ emp.name }}</td>
-                <td>{{ emp.department || '-' }}</td>
-                <td>{{ emp.current_position || '-' }}</td>
-                <td>
-                  <span :style="{ color: getScoreColor(emp.attrition_risk_score), fontWeight: 600 }">
-                    {{ emp.attrition_risk_score ?? '-' }}
-                  </span>
-                </td>
-                <td>
-                  <span :class="['risk-badge', getRiskLevelTag(emp.attrition_risk).cls]">
-                    {{ getRiskLevelTag(emp.attrition_risk).label }}
-                  </span>
-                </td>
-                <td>{{ emp.potential_score ?? '-' }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+
       </template>
     </div>
 
@@ -368,6 +431,38 @@ async function sendMessage() {
 </template>
 
 <style scoped>
+/* ── 图表样式 ── */
+.charts-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.chart-box {
+  flex: 1;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  min-width: 0;
+}
+
+.chart-box-third {
+  flex: 1;
+}
+
+.chart-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.chart-canvas {
+  width: 100%;
+  height: 200px;
+}
+
 .potential-layout {
   display: flex;
   gap: 20px;
@@ -417,7 +512,7 @@ async function sendMessage() {
 /* ── 风险统计卡片 ── */
 .risk-summary {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   margin-bottom: 16px;
 }
