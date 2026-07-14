@@ -14,10 +14,13 @@ cursor.execute("""
     )
 """)
 
+# 注意：employee_talent_data 中的 potential_score/potential_level 已被删除，
+# 因此从 talent_assessments 表获取潜力数据
 cursor.execute("""
     INSERT IGNORE INTO employee_potential (employee_id, name, potential_score, potential_level, talent_tag)
-    SELECT employee_id, name, potential_score, potential_level, talent_tag
-    FROM employee_talent_data
+    SELECT e.employee_no, e.name, ta.potential_score, ta.potential_level, ta.talent_tag
+    FROM employees e
+    JOIN talent_assessments ta ON ta.employee_id = e.id
 """)
 conn.commit()
 print(f"表创建成功，导入 {cursor.rowcount} 条记录")
