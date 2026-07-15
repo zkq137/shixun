@@ -602,17 +602,20 @@ def auth_logout():
 
 
 # Dify AI 智能体配置（本地部署）
-DIFY_API_URL = "http://192.168.125.130/v1/chat-messages"
+DIFY_API_URL = "http://127.0.0.1/v1/chat-messages"
 DIFY_APP_ID = "app-13oLzUizeaNgxlBqh913Hu9g"
 
 # 培训智能体配置
 TRAINING_AGENT_ID = "app-i76mFs84OFgh5PXW2flJ9UXi"
 
 # 工作流 API 端点（Workflow 模式使用独立的 endpoint）
-WORKFLOW_API_URL = "http://192.168.125.130/v1/workflows/run"
+WORKFLOW_API_URL = "http://127.0.0.1/v1/workflows/run"
 
 # 继任计划工作流配置
-SUCCESSION_AGENT_ID = "app-8dC5kB9slXrtnTDXBc67xM1u"
+SUCCESSION_AGENT_ID = "app-ws17cPnRGZMVvFQZoHZMgPIl"
+
+# 干预方案生成 Agent
+INTERVENTION_AGENT_ID = "app-9Q1j8ibjjf2l1U0dU39QYF34"
 
 
 @app.post("/api/ai/chat")
