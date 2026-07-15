@@ -6,10 +6,42 @@ import { marked } from 'marked'
 marked.setOptions({ breaks: true, gfm: true })
 
 // ── 状态 ──
-const activeTab = ref('potential')  // 'potential' | 'risk'
+const activeTab = ref('potential')  // 'potential' | 'risk' | 'records'
 const potentialList = ref([])
+const sidebarWidth = ref(33)  // 默认占 33%
+const isResizing = ref(false)
+
+function startResize(e) {
+  isResizing.value = true
+  document.body.style.userSelect = 'none'
+  document.addEventListener('mousemove', onResize)
+  document.addEventListener('mouseup', stopResize)
+  e.preventDefault()
+}
+
+function onResize(e) {
+  if (!isResizing.value) return
+  const container = document.querySelector('.potential-layout')
+  if (!container) return
+  const rect = container.getBoundingClientRect()
+  const newWidth = ((rect.right - e.clientX) / rect.width) * 100
+  sidebarWidth.value = Math.max(20, Math.min(60, newWidth))
+}
+
+function stopResize() {
+  isResizing.value = false
+  document.body.style.userSelect = ''
+  document.removeEventListener('mousemove', onResize)
+  document.removeEventListener('mouseup', stopResize)
+}
+
+onUnmounted(() => {
+  document.removeEventListener('mousemove', onResize)
+  document.removeEventListener('mouseup', stopResize)
+})
 const positionRisks = ref([])
 const employeeRisks = ref([])
+const assessmentRecords = ref([])
 const loading = ref(true)
 const error = ref('')
 
@@ -35,11 +67,35 @@ const filteredEmployeeRisks = computed(() => {
   )
 })
 
+// 评估记录搜索
+const recordsSearch = ref('')
+const filteredRecords = computed(() => {
+  const q = recordsSearch.value.trim().toLowerCase()
+  if (!q) return assessmentRecords.value
+  return assessmentRecords.value.filter(
+    r => r.employee_id?.toLowerCase().includes(q) || r.name?.includes(q)
+  )
+})
+
+// ── 保存评估表单弹窗 ──
+const showDetailModal = ref(false)
+const detailRecord = ref(null)
+
+function viewAssessmentDetail(record) {
+  detailRecord.value = record
+  showDetailModal.value = true
+}
+
+function closeDetailModal() {
+  showDetailModal.value = false
+  detailRecord.value = null
+}
+
 // AI 聊天
 const chatMessages = ref([
   {
     role: 'assistant',
-    content: '您好！我是**人才分析与风险研判助手** 🧠，可以帮您：\n\n' +
+    content: '您好！我是**人才分析与风险研判助手** ◈，可以帮您：\n\n' +
       '**人才潜力评估：**\n' +
       '• 对某员工进行潜力评估\n' +
       '**岗位风险研判：**\n' +
@@ -143,8 +199,10 @@ watch(activeTab, () => {
   nextTick(() => {
     if (activeTab.value === 'potential') {
       renderPotentialPie()
-    } else {
+    } else if (activeTab.value === 'risk') {
       renderRiskPie()
+    } else if (activeTab.value === 'records') {
+      fetchAssessmentRecords()
     }
   })
 })
@@ -178,6 +236,15 @@ async function fetchRisks() {
     ])
     positionRisks.value = await posResp.json()
     employeeRisks.value = await empResp.json()
+  } catch {
+    // ignore
+  }
+}
+
+async function fetchAssessmentRecords() {
+  try {
+    const resp = await fetch('/api/potential-assessments/all')
+    assessmentRecords.value = await resp.json()
   } catch {
     // ignore
   }
@@ -236,12 +303,12 @@ async function sendMessage() {
       chatMessages.value.push({ role: 'assistant', content: data.answer })
       conversationId.value = data.conversation_id || ''
     } else if (data.error) {
-      chatMessages.value.push({ role: 'assistant', content: '❌ ' + data.error })
+      chatMessages.value.push({ role: 'assistant', content: '✕ ' + data.error })
     }
     // 智能体可能修改了数据库，同步刷新左侧列表
     await Promise.all([fetchPotential(), fetchRisks()])
   } catch {
-    chatMessages.value.push({ role: 'assistant', content: '❌ 网络错误，请稍后重试' })
+    chatMessages.value.push({ role: 'assistant', content: '✕ 网络错误，请稍后重试' })
   } finally {
     chatLoading.value = false
   }
@@ -258,13 +325,19 @@ async function sendMessage() {
           :class="['tab-item', { active: activeTab === 'potential' }]"
           @click="activeTab = 'potential'"
         >
-          🧠 人才潜力评估
+          ◈ 人才潜力评估
         </div>
         <div
           :class="['tab-item', { active: activeTab === 'risk' }]"
           @click="activeTab = 'risk'"
         >
-          ⚠️ 岗位风险研判
+          ▲ 岗位风险研判
+        </div>
+        <div
+          :class="['tab-item', { active: activeTab === 'records' }]"
+          @click="activeTab = 'records'"
+        >
+          ☰ 评估详情
         </div>
       </div>
 
@@ -276,7 +349,7 @@ async function sendMessage() {
         <!-- 图表区域 -->
         <div class="charts-row">
           <div class="chart-box">
-            <h4 class="chart-title">📊 潜力等级分布</h4>
+            <h4 class="chart-title">▣ 潜力等级分布</h4>
             <div ref="potentialChartRef" class="chart-canvas"></div>
           </div>
         </div>
@@ -289,7 +362,7 @@ async function sendMessage() {
             <input
               v-model="searchQuery"
               class="search-input"
-              placeholder="🔍 搜索工号或姓名..."
+              placeholder="◎ 搜索工号或姓名..."
             />
           </div>
         </div>
@@ -329,7 +402,7 @@ async function sendMessage() {
         <!-- 图表区域 -->
         <div class="charts-row">
           <div class="chart-box">
-            <h4 class="chart-title">🔴 岗位风险等级分布</h4>
+            <h4 class="chart-title">● 岗位风险等级分布</h4>
             <div ref="riskPieChartRef" class="chart-canvas"></div>
           </div>
         </div>
@@ -389,16 +462,57 @@ async function sendMessage() {
 
 
       </template>
+
+      <!-- ====== 评估详情 Tab ====== -->
+      <template v-if="activeTab === 'records'">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <span class="toolbar-title">☰ 潜力评估详情</span>
+            <span class="toolbar-count">共 {{ filteredRecords.length }} 条</span>
+          </div>
+          <div class="search-box">
+            <input
+              v-model="recordsSearch"
+              class="search-input"
+              placeholder="◎ 搜索工号或姓名..."
+            />
+          </div>
+        </div>
+        <div v-if="filteredRecords.length === 0" class="empty-state">暂无评估详情</div>
+        <div v-else class="record-cards">
+          <div
+            v-for="rec in filteredRecords"
+            :key="rec.id"
+            class="record-card"
+            @click="viewAssessmentDetail(rec)"
+          >
+            <div class="card-id">{{ rec.employee_id }}</div>
+            <div class="card-name">{{ rec.name }}</div>
+            <div class="card-meta">
+              <span v-if="rec.department">{{ rec.department }}</span>
+              <span v-if="rec.current_position"> · {{ rec.current_position }}</span>
+            </div>
+            <div class="card-footer">
+              <span class="card-time">{{ rec.created_at ? rec.created_at.slice(0, 10) : '-' }}</span>
+              <button class="card-btn" @click.stop="viewAssessmentDetail(rec)">查看详情 →</button>
+            </div>
+          </div>
+        </div>
+      </template>
     </div>
 
+    <!-- 拖拽手柄 -->
+    <div class="resize-handle" @mousedown="startResize"></div>
+
     <!-- 右侧：AI 对话助手 -->
-    <div class="chat-sidebar">
+    <div class="chat-sidebar" :style="{ flex: `0 0 ${sidebarWidth}%` }">
       <div class="chat-header">
-        <span class="chat-avatar">🧠</span>
+        <span class="chat-avatar">◈</span>
         <div>
           <p class="chat-title">人才分析与风险研判助手</p>
           <p class="chat-subtitle">AI 智能体</p>
         </div>
+        <button class="chat-clear" @click="chatMessages = chatMessages.slice(0, 1)" title="清除对话">清除</button>
       </div>
 
       <div class="chat-messages" ref="chatBox">
@@ -410,7 +524,7 @@ async function sendMessage() {
           <div class="msg-bubble" v-html="renderMarkdown(msg.content)"></div>
         </div>
         <div v-if="chatLoading" class="chat-msg assistant">
-          <div class="msg-bubble thinking">⏳ 思考中...</div>
+          <div class="msg-bubble thinking">◎ 思考中...</div>
         </div>
       </div>
 
@@ -425,6 +539,34 @@ async function sendMessage() {
         <button class="chat-send" @click="sendMessage" :disabled="chatLoading || !userInput.trim()">
           发送
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 评估详情弹窗 ── -->
+  <div v-if="showDetailModal" class="modal-overlay" @click.self="closeDetailModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>☰ 评估详情</h3>
+        <button class="modal-close" @click="closeDetailModal">✕</button>
+      </div>
+      <div class="modal-body" v-if="detailRecord">
+        <div class="detail-item">
+          <span class="detail-label">工号</span>
+          <span class="detail-value">{{ detailRecord.employee_id }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">姓名</span>
+          <span class="detail-value">{{ detailRecord.name }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label">评估时间</span>
+          <span class="detail-value">{{ detailRecord.created_at || '-' }}</span>
+        </div>
+        <div v-if="detailRecord.assessment_detail" class="detail-section">
+          <h4>▸ 评估详情</h4>
+          <div class="detail-text" v-html="renderMarkdown(detailRecord.assessment_detail)"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -504,7 +646,7 @@ async function sendMessage() {
 }
 
 .tab-item.active {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
   color: #fff;
   font-weight: 600;
 }
@@ -531,7 +673,7 @@ async function sendMessage() {
 .risk-stat-card.high { border-left: 4px solid #dc2626; }
 .risk-stat-card.low { border-left: 4px solid #16a34a; }
 .risk-stat-card.emp { border-left: 4px solid #d97706; }
-.risk-stat-card.total { border-left: 4px solid #6366f1; }
+.risk-stat-card.total { border-left: 4px solid #14b8a6; }
 
 .risk-stat-num {
   font-size: 28px;
@@ -586,9 +728,9 @@ async function sendMessage() {
 }
 
 .search-input:focus {
-  border-color: #6366f1;
+  border-color: #14b8a6;
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.1);
 }
 
 .search-input::placeholder {
@@ -669,7 +811,7 @@ async function sendMessage() {
   position: absolute;
   left: 14px;
   height: 6px;
-  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+  background: linear-gradient(90deg, #14b8a6, #0d9488);
   border-radius: 3px;
   opacity: 0.15;
   max-width: calc(100% - 28px);
@@ -762,8 +904,7 @@ async function sendMessage() {
 
 /* ── AI 聊天侧栏 ── */
 .chat-sidebar {
-  width: 360px;
-  flex-shrink: 0;
+  min-width: 260px;
   background: #fff;
   border-radius: 12px;
   border: 1px solid #e2e8f0;
@@ -772,13 +913,29 @@ async function sendMessage() {
   overflow: hidden;
 }
 
+/* ── 拖拽手柄 ── */
+.resize-handle {
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  flex-shrink: 0;
+  transition: background 0.2s;
+  border-radius: 3px;
+  margin: 0 4px;
+}
+
+.resize-handle:hover,
+.resize-handle:active {
+  background: #14b8a6;
+}
+
 .chat-header {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 16px 20px;
   border-bottom: 1px solid #e2e8f0;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
   color: #fff;
 }
 
@@ -796,6 +953,23 @@ async function sendMessage() {
   margin: 2px 0 0;
   font-size: 12px;
   opacity: 0.7;
+}
+
+.chat-clear {
+  margin-left: auto;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: #fff;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.chat-clear:hover {
+  background: rgba(255,255,255,0.35);
 }
 
 .chat-messages {
@@ -884,17 +1058,19 @@ async function sendMessage() {
 .msg-bubble :deep(h2) { font-size: 15px; }
 .msg-bubble :deep(h3) { font-size: 14px; }
 .msg-bubble :deep(blockquote) {
-  border-left: 3px solid #6366f1;
+  border-left: 3px solid #14b8a6;
   margin: 8px 0;
   padding: 6px 12px;
-  background: rgba(99, 102, 241, 0.05);
+  background: rgba(20, 184, 166, 0.05);
   border-radius: 0 6px 6px 0;
   color: #64748b;
 }
 
 .msg-bubble :deep(table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
   border-collapse: collapse;
-  width: 100%;
   margin: 8px 0;
   font-size: 12px;
 }
@@ -902,8 +1078,10 @@ async function sendMessage() {
 .msg-bubble :deep(th),
 .msg-bubble :deep(td) {
   border: 1px solid #e2e8f0;
-  padding: 6px 10px;
+  padding: 5px 8px;
   text-align: left;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .msg-bubble :deep(th) {
@@ -925,7 +1103,7 @@ async function sendMessage() {
 }
 
 .chat-msg.user .msg-bubble {
-  background: #6366f1;
+  background: #14b8a6;
   color: #fff;
   border-bottom-right-radius: 4px;
 }
@@ -959,13 +1137,13 @@ async function sendMessage() {
 }
 
 .chat-input:focus {
-  border-color: #6366f1;
+  border-color: #14b8a6;
 }
 
 .chat-send {
   padding: 8px 18px;
   border: none;
-  background: #6366f1;
+  background: #14b8a6;
   color: #fff;
   border-radius: 8px;
   font-size: 13px;
@@ -983,4 +1161,214 @@ async function sendMessage() {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #94a3b8;
+  font-size: 14px;
+}
+.btn-sm {
+  background: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-sm:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+/* ── 弹窗 ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: #fff;
+  border-radius: 16px;
+  width: 640px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 24px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.modal-close:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.detail-item {
+  margin-bottom: 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.detail-label {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.detail-value {
+  font-size: 14px;
+  color: #1e293b;
+  font-weight: 500;
+}
+
+.detail-section h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+  margin: 0 0 12px;
+}
+
+.detail-text {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #334155;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  white-space: pre-wrap;
+}
+
+.detail-text :deep(p) {
+  margin: 0 0 8px;
+}
+.detail-text :deep(ul), .detail-text :deep(ol) {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+.detail-text :deep(li) {
+  margin-bottom: 2px;
+}
+
+.cell-time {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+/* ── 卡片视图 ── */
+.record-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  padding-bottom: 20px;
+}
+
+.record-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.record-card:hover {
+  border-color: #14b8a6;
+  box-shadow: 0 4px 16px rgba(20, 184, 166, 0.1);
+  transform: translateY(-2px);
+}
+
+.card-id {
+  font-size: 13px;
+  font-weight: 600;
+  color: #14b8a6;
+  font-family: 'SF Mono', 'Consolas', monospace;
+  margin-bottom: 4px;
+}
+
+.card-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.card-meta {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.card-time {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.card-btn {
+  background: none;
+  border: none;
+  color: #14b8a6;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.card-btn:hover {
+  background: #f0fdfa;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
 </style>

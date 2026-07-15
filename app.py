@@ -4,6 +4,7 @@ import uuid
 import time
 from pathlib import Path
 from urllib.request import Request, urlopen
+from urllib.parse import quote
 import json as _json
 from urllib.error import HTTPError, URLError
 
@@ -35,7 +36,9 @@ from backend.queries import (
     get_employee_by_no,
     get_potential_list,
     get_potential_by_id,
-    update_potential,
+    save_potential_assessment,
+    get_potential_assessment_history,
+    get_all_assessment_records,
     get_training_list,
     add_training,
     update_training_status,
@@ -48,6 +51,7 @@ from backend.queries import (
 from backend.face_auth import get_face_encoding, compare_faces, decode_base64_image
 
 app = Flask(__name__)
+app.json.ensure_ascii = False  # 确保JSON返回中文不转义
 CORS(app)
 
 # ── 二维码登录 Session 存储 ─────────────────────────────
@@ -104,6 +108,17 @@ def _clean_base_url(raw_value):
 def _get_succession_dify_settings():
     base_url = _clean_base_url(_get_setting("DIFY_BASE_URL", "http://127.0.0.1"))
     api_key = (_get_setting("DIFY_SUCCESSION_API_KEY") or "").strip()
+
+    # Fallback to local_settings.py if .env fails
+    if not api_key:
+        try:
+            from backend.local_settings import (
+                DIFY_SUCCESSION_API_KEY as LOCAL_SUCCESSION_KEY,
+            )
+            api_key = (LOCAL_SUCCESSION_KEY or "").strip()
+        except ImportError:
+            pass
+
     return {
         "base_url": base_url,
         "api_key": api_key,
@@ -153,10 +168,30 @@ def _normalize_succession_workflow_response(body):
     }
 
 
-def _call_succession_workflow(inputs, user="admin"):
-    settings = _get_succession_dify_settings()
+def _get_promotion_dify_settings():
+    base_url = _clean_base_url(_get_setting("DIFY_BASE_URL", "http://127.0.0.1"))
+    api_key = (_get_setting("DIFY_PROMOTION_API_KEY") or "").strip()
+
+    # Fallback to local_settings.py if .env fails
+    if not api_key:
+        try:
+            from backend.local_settings import (
+                DIFY_PROMOTION_API_KEY as LOCAL_PROMOTION_KEY,
+            )
+            api_key = (LOCAL_PROMOTION_KEY or "").strip()
+        except ImportError:
+            pass
+
+    return {
+        "base_url": base_url,
+        "api_key": api_key,
+        "workflow_url": f"{base_url}/v1/workflows/run",
+    }
+
+
+def _call_dify_workflow(settings, inputs, user="admin"):
     if not settings["api_key"]:
-        raise RuntimeError("DIFY_SUCCESSION_API_KEY is not configured in local .env")
+        raise RuntimeError("Dify API Key is not configured")
 
     payload = _json.dumps(
         {
@@ -259,6 +294,12 @@ def _get_promotion_session(conversation_id, target_position=""):
     session.setdefault("target_position", target_position or "")
     return session
 
+def _call_succession_workflow(inputs, user="admin"):
+    return _call_dify_workflow(_get_succession_dify_settings(), inputs, user)
+
+
+def _call_promotion_workflow(inputs, user="admin"):
+    return _call_dify_workflow(_get_promotion_dify_settings(), inputs, user)
 
 def cleanup_expired_sessions():
     """清理超过5分钟的过期session"""
@@ -393,15 +434,24 @@ def succession_workflow():
     """Call the promotion decision Dify workflow."""
     data = request.get_json() or {}
     target_position = data.get("target_position", "").strip()
+    target_position_name = data.get("target_position_name", "").strip()
+    target_position_level = data.get("target_position_level", "").strip()
+    target_department = data.get("target_department", "").strip()
     promotion_rule = data.get("promotion_rule", "").strip()
     manager_comment = data.get("manager_comment", "").strip()
     created_by = data.get("created_by", "HR").strip() or "HR"
 
-    if not target_position:
-        return jsonify({"error": "Please fill in target_position"}), 400
+    if not target_position and not target_position_name:
+        return jsonify({"error": "请填写目标岗位名称"}), 400
 
     inputs = {
-        "target_position": target_position,
+        "target_position": target_position or target_position_name,
+        "target_position_name": target_position_name or target_position,
+        "target_position_level": target_position_level,
+        "target_department": target_department,
+        "bumen": target_department,
+        "cengji": target_position_level,
+        "gangwei": target_position_name or target_position,
         "promotion_rule": promotion_rule,
         "manager_comment": manager_comment,
         "created_by": created_by,
@@ -423,6 +473,11 @@ def succession_workflow():
 
 
 
+@app.get("/api/departments")
+def departments_list():
+    return jsonify(get_departments())
+
+
 @app.get("/api/promotion-agent/positions")
 def promotion_agent_positions():
     """Position names for the standalone promotion decision assistant."""
@@ -442,19 +497,19 @@ def promotion_agent_workflow():
         return jsonify({"error": "请填写追问内容"}), 400
 
     try:
-        result = _call_succession_workflow(inputs, user=created_by)
-        package_source = result.get("chat_reply") or result.get("promotion_report") or ""
-        parsed_thinking, parsed_reply, parsed_report = _split_promotion_chat_package(package_source)
-        if parsed_thinking:
-            result["thinking_summary"] = parsed_thinking
-        if parsed_reply and parsed_reply != package_source:
-            result["chat_reply"] = parsed_reply
-        if parsed_report:
-            result["updated_report"] = result.get("updated_report") or parsed_report
-            result["promotion_report"] = parsed_report
-        elif result.get("updated_report") and not result.get("promotion_report"):
-            result["promotion_report"] = result["updated_report"]
-        return jsonify(result)
+    result = _call_promotion_workflow(inputs, user=created_by)
+    package_source = result.get("chat_reply") or result.get("promotion_report") or ""
+    parsed_thinking, parsed_reply, parsed_report = _split_promotion_chat_package(package_source)
+    if parsed_thinking:
+        result["thinking_summary"] = parsed_thinking
+    if parsed_reply and parsed_reply != package_source:
+        result["chat_reply"] = parsed_reply
+    if parsed_report:
+        result["updated_report"] = result.get("updated_report") or parsed_report
+        result["promotion_report"] = parsed_report
+    elif result.get("updated_report") and not result.get("promotion_report"):
+        result["promotion_report"] = result["updated_report"]
+    return jsonify(result)
     except HTTPError as exc:
         try:
             detail = exc.read().decode("utf-8", errors="replace")
@@ -508,14 +563,15 @@ def promotion_agent_stream():
     def generate():
         run_started_at = time.time()
         yield sse("session", {"conversation_id": conversation_id})
+
         if mode == "generate":
             yield sse("status", {"message": "已接收生成请求，正在生成晋升正文..."})
         else:
             yield sse("status", {"message": "已接收追问，正在判断是否需要查询数据库..."})
+        settings = _get_promotion_dify_settings()
 
-        settings = _get_succession_dify_settings()
         if not settings["api_key"]:
-            yield sse("error", {"error": "DIFY_SUCCESSION_API_KEY is not configured in local .env"})
+            yield sse("error", {"error": "DIFY_PROMOTION_API_KEY is not configured in local .env"})
             return
 
         payload = _json.dumps({"inputs": inputs, "response_mode": "streaming", "user": created_by}, ensure_ascii=False).encode("utf-8")
@@ -620,6 +676,37 @@ def potential_by_id(employee_id):
     return jsonify(result)
 
 
+@app.post("/api/potential-assessment/save")
+def create_potential_assessment():
+    """保存一条评估记录"""
+    data = request.get_json()
+    if not data or "employee_id" not in data:
+        return jsonify({"error": "缺少 employee_id"}), 400
+
+    ok = save_potential_assessment(
+        employee_id=data["employee_id"],
+        name=data.get("name", ""),
+        assessment_detail=data.get("assessment_detail"),
+    )
+    if ok:
+        return jsonify({"success": True, "message": "评估记录已保存"})
+    return jsonify({"error": "保存失败"}), 500
+
+
+@app.get("/api/potential/<employee_id>/assessments")
+def potential_assessment_history(employee_id):
+    """获取某员工的评估历史"""
+    records = get_potential_assessment_history(employee_id)
+    return jsonify(records)
+
+
+@app.get("/api/potential-assessments/all")
+def all_potential_assessments():
+    """获取所有评估记录"""
+    records = get_all_assessment_records()
+    return jsonify(records)
+
+
 @app.get("/api/position-risks")
 def position_risks():
     """岗位风险研判列表"""
@@ -709,17 +796,20 @@ def auth_logout():
 
 
 # Dify AI 智能体配置（本地部署）
-DIFY_API_URL = "http://192.168.125.130/v1/chat-messages"
+DIFY_API_URL = "http://127.0.0.1/v1/chat-messages"
 DIFY_APP_ID = "app-13oLzUizeaNgxlBqh913Hu9g"
 
 # 培训智能体配置
 TRAINING_AGENT_ID = "app-i76mFs84OFgh5PXW2flJ9UXi"
 
 # 工作流 API 端点（Workflow 模式使用独立的 endpoint）
-WORKFLOW_API_URL = "http://192.168.125.130/v1/workflows/run"
+WORKFLOW_API_URL = "http://127.0.0.1/v1/workflows/run"
 
 # 继任计划工作流配置
-SUCCESSION_AGENT_ID = "app-8dC5kB9slXrtnTDXBc67xM1u"
+SUCCESSION_AGENT_ID = "app-ws17cPnRGZMVvFQZoHZMgPIl"
+
+# 干预方案生成 Agent
+INTERVENTION_AGENT_ID = "app-9Q1j8ibjjf2l1U0dU39QYF34"
 
 
 @app.post("/api/ai/chat")

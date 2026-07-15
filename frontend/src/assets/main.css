@@ -179,7 +179,7 @@ body {
 .main-content {
   flex: 1;
   padding: 28px 32px;
-  max-width: 1100px;
+  min-width: 0;
 }
 
 .content-header {
@@ -319,11 +319,16 @@ table {
   border-collapse: collapse;
 }
 
+.table-wrap {
+  overflow-x: auto;
+}
+
 th, td {
   text-align: left;
   padding: 12px 10px;
   border-bottom: 1px solid #e2e8f0;
   font-size: 14px;
+  word-break: break-word;
 }
 
 th {

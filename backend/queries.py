@@ -1332,7 +1332,7 @@ def get_potential_by_id(employee_id):
 def update_potential(employee_id, potential_score, potential_level, talent_tag=None):
     """更新员工潜力数据（仅更新 employee_potential 表）"""
     try:
-        sql_potential = """
+        sql = """
             UPDATE employee_potential
             SET potential_score = %s, potential_level = %s
         """
@@ -1343,10 +1343,62 @@ def update_potential(employee_id, potential_score, potential_level, talent_tag=N
         sql += " WHERE employee_id = %s"
         params.append(employee_id)
 
-        execute(sql_potential, params)
+        execute(sql, params)
         return True
     except Exception:
         return False
+
+
+# ── 潜力评估记录 ───────────────────────────────────────
+
+
+def save_potential_assessment(employee_id, name, assessment_detail=None):
+    """保存一条评估记录"""
+    try:
+        sql = """
+            INSERT INTO potential_assessment_records
+                (employee_id, name, assessment_detail)
+            VALUES (%s, %s, %s)
+        """
+        execute(sql, (employee_id, name, assessment_detail))
+        return True
+    except Exception:
+        return False
+
+
+def get_potential_assessment_history(employee_id, limit=20):
+    """获取某员工的评估历史记录"""
+    try:
+        return query_all(
+            """
+            SELECT id, employee_id, name, assessment_detail, created_at
+            FROM potential_assessment_records
+            WHERE employee_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (employee_id, limit),
+        )
+    except Exception:
+        return []
+
+
+def get_all_assessment_records(limit=200):
+    """获取所有评估记录"""
+    try:
+        return query_all(
+            """
+            SELECT r.id, r.employee_id, r.name, r.assessment_detail, r.created_at,
+                   e.department, e.position_name AS current_position
+            FROM potential_assessment_records r
+            LEFT JOIN employee_talent_data e ON e.employee_id COLLATE utf8mb4_unicode_ci = r.employee_id
+            ORDER BY r.created_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+    except Exception:
+        return []
 
 
 # ── 岗位风险研判 ───────────────────────────────────────
