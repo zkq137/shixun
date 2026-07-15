@@ -497,19 +497,19 @@ def promotion_agent_workflow():
         return jsonify({"error": "请填写追问内容"}), 400
 
     try:
-    result = _call_promotion_workflow(inputs, user=created_by)
-    package_source = result.get("chat_reply") or result.get("promotion_report") or ""
-    parsed_thinking, parsed_reply, parsed_report = _split_promotion_chat_package(package_source)
-    if parsed_thinking:
-        result["thinking_summary"] = parsed_thinking
-    if parsed_reply and parsed_reply != package_source:
-        result["chat_reply"] = parsed_reply
-    if parsed_report:
-        result["updated_report"] = result.get("updated_report") or parsed_report
-        result["promotion_report"] = parsed_report
-    elif result.get("updated_report") and not result.get("promotion_report"):
-        result["promotion_report"] = result["updated_report"]
-    return jsonify(result)
+        result = _call_promotion_workflow(inputs, user=created_by)
+        package_source = result.get("chat_reply") or result.get("promotion_report") or ""
+        parsed_thinking, parsed_reply, parsed_report = _split_promotion_chat_package(package_source)
+        if parsed_thinking:
+            result["thinking_summary"] = parsed_thinking
+        if parsed_reply and parsed_reply != package_source:
+            result["chat_reply"] = parsed_reply
+        if parsed_report:
+            result["updated_report"] = result.get("updated_report") or parsed_report
+            result["promotion_report"] = parsed_report
+        elif result.get("updated_report") and not result.get("promotion_report"):
+            result["promotion_report"] = result["updated_report"]
+        return jsonify(result)
     except HTTPError as exc:
         try:
             detail = exc.read().decode("utf-8", errors="replace")
