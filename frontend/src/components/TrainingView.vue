@@ -31,7 +31,7 @@ const adding = ref(false)
 const chatMessages = ref([
   {
     role: 'assistant',
-    content: '您好！我是**培训发展助手** 🤖，可以帮您：\n\n' +
+    content: '您好！我是**培训发展助手** ◈，可以帮您：\n\n' +
       '• 根据员工情况制定培训\n' +
       '• 根据您的选择安排培训\n\n' +
       '请问有什么可以帮您的？'
@@ -165,12 +165,12 @@ async function sendMessage() {
       chatMessages.value.push({ role: 'assistant', content: data.answer })
       conversationId.value = data.conversation_id || ''
     } else if (data.error) {
-      chatMessages.value.push({ role: 'assistant', content: '❌ ' + data.error })
+      chatMessages.value.push({ role: 'assistant', content: '✕ ' + data.error })
     }
     // 智能体可能修改了数据库，同步刷新左侧列表
     await Promise.all([fetchTrainingList(), fetchAbilityTrainings()])
   } catch {
-    chatMessages.value.push({ role: 'assistant', content: '❌ 网络错误，请稍后重试' })
+    chatMessages.value.push({ role: 'assistant', content: '✕ 网络错误，请稍后重试' })
   } finally {
     chatLoading.value = false
   }
@@ -187,13 +187,13 @@ async function sendMessage() {
           :class="['tab-item', { active: activeTab === 'plan' }]"
           @click="activeTab = 'plan'"
         >
-          📋 培训计划
+          ☰ 培训计划
         </div>
         <div
           :class="['tab-item', { active: activeTab === 'ability' }]"
           @click="activeTab = 'ability'"
         >
-          📚 能力培训完成
+          ☰ 能力培训完成
         </div>
       </div>
 
@@ -241,7 +241,7 @@ async function sendMessage() {
                 <td>{{ item.training_plan }}</td>
                 <td>
                   <span :class="['tag', item.is_completed ? 'tag-s' : 'tag-b']">
-                    {{ item.is_completed ? '✅ 已完成' : '⏳ 未完成' }}
+                    {{ item.is_completed ? '✓ 已完成' : '◎ 未完成' }}
                   </span>
                 </td>
                 <td class="cell-date">{{ item.created_at ? item.created_at.slice(0, 10) : '-' }}</td>
@@ -253,7 +253,7 @@ async function sendMessage() {
                   >
                     {{ item.is_completed ? '↩ 撤回' : '✓ 完成' }}
                   </button>
-                  <button class="btn-action btn-delete" @click="deleteTraining(item)">🗑 删除</button>
+                  <button class="btn-action btn-delete" @click="deleteTraining(item)">✕ 删除</button>
                 </td>
               </tr>
               <tr v-if="trainingList.length === 0">
@@ -268,7 +268,7 @@ async function sendMessage() {
       <template v-if="activeTab === 'completed'">
         <div class="toolbar">
           <div class="toolbar-left">
-            <span class="toolbar-title">✅ 已完成培训记录</span>
+            <span class="toolbar-title">✓ 已完成培训记录</span>
             <span class="toolbar-count">共 {{ completedTrainings.length }} 项</span>
           </div>
         </div>
@@ -277,7 +277,7 @@ async function sendMessage() {
         <div v-else-if="error" class="error-state">{{ error }}</div>
 
         <div v-else-if="completedTrainings.length === 0" class="loading-state">
-          🎉 暂无已完成培训记录
+          暂无已完成培训记录
         </div>
 
         <div v-else class="completed-grid">
@@ -286,7 +286,7 @@ async function sendMessage() {
             :key="'done-' + item.employee_id + item.training_plan"
             class="completed-card"
           >
-            <div class="card-icon">✅</div>
+            <div class="card-icon">✓</div>
             <div class="card-body">
               <div class="card-name">{{ item.name }}</div>
               <div class="card-plan">{{ item.training_plan }}</div>
@@ -303,20 +303,20 @@ async function sendMessage() {
       <template v-if="activeTab === 'ability'">
         <div class="toolbar">
           <div class="toolbar-left">
-            <span class="toolbar-title">📚 员工已完成培训（能力表）</span>
+            <span class="toolbar-title">☰ 员工已完成培训（能力表）</span>
             <span class="toolbar-count">共 {{ filteredAbilityTrainings.length }} 人</span>
           </div>
           <div class="search-box">
             <input
               v-model="abilitySearch"
               class="search-input"
-              placeholder="🔍 搜索姓名或工号..."
+              placeholder="◎ 搜索姓名或工号..."
             />
           </div>
         </div>
 
         <div v-if="abilityTrainings.length === 0" class="loading-state">
-          📭 暂无数据
+          暂无数据
         </div>
 
         <div v-else class="table-wrap">
@@ -347,7 +347,7 @@ async function sendMessage() {
     <!-- 右侧：AI 培训助手 -->
     <div class="chat-sidebar">
       <div class="chat-header training-chat-header">
-        <span class="chat-avatar">📚</span>
+        <span class="chat-avatar">◈</span>
         <div>
           <p class="chat-title">培训发展助手</p>
           <p class="chat-subtitle">AI 智能体</p>
@@ -363,7 +363,7 @@ async function sendMessage() {
           <div class="msg-bubble" v-html="renderMarkdown(msg.content)"></div>
         </div>
         <div v-if="chatLoading" class="chat-msg assistant">
-          <div class="msg-bubble thinking">⏳ 思考中...</div>
+          <div class="msg-bubble thinking">◎ 思考中...</div>
         </div>
       </div>
 

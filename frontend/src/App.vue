@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref } from 'vue'
 import LoginView from './components/LoginView.vue'
 import SuccessionView from './components/SuccessionView.vue'
@@ -91,12 +91,14 @@ async function handleLogout() {
       <header class="content-header">
         <h1>{{ viewTitles[currentView] }}</h1>
       </header>
-      <PotentialView v-if="currentView === 'potential'" />
-      <SuccessionView v-else-if="currentView === 'succession'" />
-      <PromotionAgentView v-else-if="currentView === 'promotionAgent'" />
-      <TrainingView v-else-if="currentView === 'training'" />
-      <RiskView v-else-if="currentView === 'risk'" />
-      <EmployeeView v-else-if="currentView === 'employee'" />
+      <KeepAlive>
+        <PotentialView v-if="currentView === 'potential'" />
+        <SuccessionView v-else-if="currentView === 'succession'" />
+        <PromotionAgentView v-else-if="currentView === 'promotionAgent'" />
+        <TrainingView v-else-if="currentView === 'training'" />
+        <RiskView v-else-if="currentView === 'risk'" />
+        <EmployeeView v-else-if="currentView === 'employee'" />
+      </KeepAlive>
     </main>
   </div>
 </template>

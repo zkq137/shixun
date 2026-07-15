@@ -38,7 +38,7 @@ def _extract_workflow_text(outputs):
     if not isinstance(outputs, dict):
         return str(outputs or "")
 
-    for key in ("text", "answer", "result", "output"):
+    for key in ("text", "text1", "answer", "result", "output"):
         value = outputs.get(key)
         if value:
             return str(value)
