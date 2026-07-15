@@ -24,9 +24,18 @@ workflow:
   environment_variables: []
   features:
     file_upload:
-      allowed_file_extensions: [.JPG, .JPEG, .PNG, .GIF, .WEBP, .SVG]
-      allowed_file_types: [image]
-      allowed_file_upload_methods: [local_file, remote_url]
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
       enabled: false
       fileUploadConfig:
         attachment_image_file_size_limit: 2
@@ -42,7 +51,9 @@ workflow:
       image:
         enabled: false
         number_limits: 3
-        transfer_methods: [local_file, remote_url]
+        transfer_methods:
+        - local_file
+        - remote_url
       number_limits: 3
     opening_statement: ''
     retriever_resource:
@@ -60,15 +71,83 @@ workflow:
       voice: ''
   graph:
     edges:
-    - data: {isInIteration: false, isInLoop: false, sourceType: start, targetType: tool}
-      id: start-to-position-profile
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: if-else
+      id: start-to-mode-router
       source: start_node
       sourceHandle: source
+      target: promotion_mode_router
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: tool
+      id: mode-generate-to-position-profile
+      source: promotion_mode_router
+      sourceHandle: 'true'
       target: position_profile_query
       targetHandle: target
       type: custom
       zIndex: 0
-    - data: {isInIteration: false, isInLoop: false, sourceType: tool, targetType: tool}
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: mode-chat-to-planner
+      source: promotion_mode_router
+      sourceHandle: 'false'
+      target: promotion_tool_planner
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: if-else
+      id: planner-to-tool-router
+      source: promotion_tool_planner
+      sourceHandle: source
+      target: promotion_tool_router
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: tool
+      id: tool-router-db-to-position-profile
+      source: promotion_tool_router
+      sourceHandle: 'true'
+      target: position_profile_query
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: tool-router-no-db-to-chat
+      source: promotion_tool_router
+      sourceHandle: 'false'
+      target: promotion_chat_llm
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: tool
+        targetType: tool
       id: position-profile-to-candidate-pool
       source: position_profile_query
       sourceHandle: source
@@ -76,19 +155,75 @@ workflow:
       targetHandle: target
       type: custom
       zIndex: 0
-    - data: {isInIteration: false, isInLoop: false, sourceType: tool, targetType: llm}
-      id: candidate-pool-to-analysis
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: tool
+        targetType: if-else
+      id: candidate-pool-to-after-db-router
       source: candidate_pool_query
       sourceHandle: source
+      target: promotion_after_db_router
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: after-db-generate-to-analysis
+      source: promotion_after_db_router
+      sourceHandle: 'true'
       target: promotion_llm
       targetHandle: target
       type: custom
       zIndex: 0
-    - data: {isInIteration: false, isInLoop: false, sourceType: llm, targetType: end}
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: after-db-chat-to-db-chat
+      source: promotion_after_db_router
+      sourceHandle: 'false'
+      target: promotion_chat_db_llm
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: end
       id: analysis-to-end
       source: promotion_llm
       sourceHandle: source
       target: end_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: chat-to-chat-end
+      source: promotion_chat_llm
+      sourceHandle: source
+      target: chat_end_node
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: db-chat-to-db-chat-end
+      source: promotion_chat_db_llm
+      sourceHandle: source
+      target: chat_db_end_node
       targetHandle: target
       type: custom
       zIndex: 0
@@ -99,6 +234,42 @@ workflow:
         title: 输入晋升任务
         type: start
         variables:
+        - default: generate
+          hint: generate 生成晋升建议，chat 处理追问和修订
+          label: 运行模式
+          max_length: 32
+          options: []
+          placeholder: generate 或 chat
+          required: false
+          type: text-input
+          variable: mode
+        - default: ''
+          hint: 追问时传入当前晋升建议正文
+          label: 当前晋升建议
+          max_length: 12000
+          options: []
+          placeholder: 可留空
+          required: false
+          type: paragraph
+          variable: current_report
+        - default: ''
+          hint: 追问问题
+          label: 追问问题
+          max_length: 2000
+          options: []
+          placeholder: 可留空
+          required: false
+          type: paragraph
+          variable: followup_question
+        - default: ''
+          hint: 最近对话上下文
+          label: 对话上下文
+          max_length: 4000
+          options: []
+          placeholder: 可留空
+          required: false
+          type: paragraph
+          variable: conversation_context
         - default: 信息技术总监
           hint: 必须和 position_profile.position_name 完全一致，例如 信息技术总监、研发经理、销售经理
           label: 目标晋升岗位
@@ -137,8 +308,181 @@ workflow:
           variable: created_by
       height: 246
       id: start_node
-      position: {x: 80, y: 220}
-      positionAbsolute: {x: 80, y: 220}
+      position:
+        x: 80
+        y: 220
+      positionAbsolute:
+        x: 80
+        y: 220
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: contains
+            id: mode-generate-condition
+            value: generate
+            varType: string
+            variable_selector:
+            - start_node
+            - mode
+          id: 'true'
+          logical_operator: and
+        selected: false
+        title: 判断运行模式
+        type: if-else
+      height: 147
+      id: promotion_mode_router
+      position:
+        x: 390
+        y: 220
+      positionAbsolute:
+        x: 390
+        y: 220
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 先理解本轮追问，判断需要哪些工具以及最终是只回复还是更新建议正文。
+        memory:
+          enabled: false
+          role_prefix:
+            assistant: ''
+            user: ''
+          window:
+            enabled: false
+            size: 50
+        model:
+          completion_params: {}
+          mode: chat
+          name: deepseek-v4-flash
+          provider: langgenius/deepseek/deepseek
+        prompt_template:
+        - id: planner-system-prompt
+          role: system
+          text: '你是晋升决策辅助 Agent 的工具规划器。你的任务不是回答用户，而是判断本轮追问需要哪些工具。
+
+
+            可用工具：
+
+            - DATABASE：查询岗位画像、候选人池、员工绩效、潜力、培训、风险等事实数据。
+
+            - REVISE_REPORT：修改当前晋升建议正文。
+
+            - DIRECT_REPLY：不使用外部工具，直接基于当前正文和上下文解释、总结或改写措辞。
+
+            - ASK_USER：信息不足，需要用户补充。
+
+
+            判断规则：
+
+            - 用户问“为什么、解释、总结、语气改写、表达更稳妥”，通常不需要 DATABASE。
+
+            - 用户问最新数据、历史绩效、候选人排序、员工对比、岗位画像、培训/风险事实，使用 DATABASE。
+
+            - 使用 DATABASE 不代表必须修改晋升建议；只有用户明确要求调整正文、重新排序、纳入/移除候选人、重写结论时，才需要 REVISE_REPORT。
+
+            - 不要输出 <think> 或隐藏推理链。
+
+
+            严格输出以下四行，不要增加其它内容：
+
+            TOOL_DATABASE: true/false
+
+            TOOL_REVISE_REPORT: true/false
+
+            TOOL_ASK_USER: true/false
+
+            PLAN_SUMMARY: <一句话说明原因>'
+        - id: planner-user-prompt
+          role: user
+          text: '目标晋升岗位：{{#start_node.target_position#}}
+
+
+            HR 晋升规则：
+
+            {{#start_node.promotion_rule#}}
+
+
+            部门经理评价：
+
+            {{#start_node.manager_comment#}}
+
+
+            当前晋升建议正文：
+
+            {{#start_node.current_report#}}
+
+
+            最近对话上下文：
+
+            {{#start_node.conversation_context#}}
+
+
+            本轮追问：
+
+            {{#start_node.followup_question#}}'
+        retry_config:
+          enabled: false
+          exponential_backoff:
+            enabled: false
+            max_interval: 10000
+            multiplier: 2
+          max_retries: 1
+          retry_interval: 1000
+        selected: false
+        structured_output:
+          enabled: false
+        title: Agent 工具规划
+        type: llm
+        vision:
+          enabled: false
+      height: 132
+      id: promotion_tool_planner
+      position:
+        x: 700
+        y: 420
+      positionAbsolute:
+        x: 700
+        y: 420
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: contains
+            id: planner-database-condition
+            value: 'TOOL_DATABASE: true'
+            varType: string
+            variable_selector:
+            - promotion_tool_planner
+            - text
+          id: 'true'
+          logical_operator: and
+        selected: false
+        title: 是否使用数据库工具
+        type: if-else
+      height: 147
+      id: promotion_tool_router
+      position:
+        x: 1010
+        y: 420
+      positionAbsolute:
+        x: 1010
+        y: 420
       selected: false
       sourcePosition: right
       targetPosition: left
@@ -151,14 +495,19 @@ workflow:
         is_team_authorization: true
         output_schema: null
         paramSchemas: []
-        params: {db_uri: '', format: '', query: ''}
+        params:
+          db_uri: ''
+          format: ''
+          query: ''
         provider_id: hjlarry/database/database
         provider_name: hjlarry/database/database
         provider_type: builtin
         selected: false
         title: 读取目标岗位要求
         tool_configurations:
-          format: {type: constant, value: md}
+          format:
+            type: constant
+            value: md
         tool_description: This tool is used to execute SQL in an existing database.
         tool_label: SQL Execute
         tool_name: sql_execute
@@ -169,19 +518,16 @@ workflow:
             value: ''
           query:
             type: mixed
-            value: |-
-              SELECT position_name, department, job_level, rank_name, position_type,
-                     core_skills, bonus_skills, required_training,
-                     performance_requirement, tenure_requirement,
-                     work_mode_requirement, is_manager, fit_description
-              FROM position_profile
-              WHERE position_name = '{{#start_node.target_position#}}'
-              LIMIT 1;
+            value: "SELECT position_name, department, job_level, rank_name, position_type,\n       core_skills, bonus_skills, required_training,\n       performance_requirement, tenure_requirement,\n       work_mode_requirement, is_manager, fit_description\nFROM position_profile\nWHERE position_name = '{{#start_node.target_position#}}'\nLIMIT 1;"
         type: tool
       height: 168
       id: position_profile_query
-      position: {x: 390, y: 180}
-      positionAbsolute: {x: 390, y: 180}
+      position:
+        x: 390
+        y: 180
+      positionAbsolute:
+        x: 390
+        y: 180
       selected: false
       sourcePosition: right
       targetPosition: left
@@ -194,14 +540,19 @@ workflow:
         is_team_authorization: true
         output_schema: null
         paramSchemas: []
-        params: {db_uri: '', format: '', query: ''}
+        params:
+          db_uri: ''
+          format: ''
+          query: ''
         provider_id: hjlarry/database/database
         provider_name: hjlarry/database/database
         provider_type: builtin
         selected: false
         title: 筛选候选人池
         tool_configurations:
-          format: {type: constant, value: md}
+          format:
+            type: constant
+            value: md
         tool_description: This tool is used to execute SQL in an existing database.
         tool_label: SQL Execute
         tool_name: sql_execute
@@ -212,30 +563,293 @@ workflow:
             value: ''
           query:
             type: mixed
-            value: |-
-              SELECT e.employee_id, e.name, e.age, e.gender, e.department,
-                     e.position_name, e.job_level, e.rank_name,
-                     e.performance_score, e.tenure_years, e.base_salary,
-                     e.compensation_factor, e.skill_tags, e.training_completed,
-                     e.potential_score, e.potential_level,
-                     e.attrition_risk_score, e.attrition_risk,
-                     e.talent_tag, e.work_mode, e.manager_id
-              FROM employee_talent_data e
-              JOIN position_profile p ON p.position_name = '{{#start_node.target_position#}}'
-              WHERE e.department = p.department
-                AND e.performance_score >= 3
-                AND e.potential_score >= 70
-                AND e.attrition_risk_score <= 60
-              ORDER BY e.performance_score DESC,
-                       e.potential_score DESC,
-                       e.attrition_risk_score ASC,
-                       e.tenure_years DESC
-              LIMIT 10;
+            value: "SELECT e.employee_id, e.name, e.age, e.gender, e.department,\n       e.position_name, e.job_level, e.rank_name,\n       e.performance_score, e.tenure_years, e.base_salary,\n       e.compensation_factor, e.skill_tags, e.training_completed,\n       COALESCE(ep.potential_score, 0) AS potential_score,\n       COALESCE(ep.potential_level, '') AS potential_level,\n       e.attrition_risk_score, e.attrition_risk,\n       COALESCE(ep.talent_tag, e.talent_tag, '') AS talent_tag,\n       e.work_mode, e.manager_id\nFROM employee_talent_data e\nJOIN position_profile p ON p.position_name COLLATE utf8mb4_unicode_ci = '{{#start_node.target_position#}}' COLLATE utf8mb4_unicode_ci\nLEFT JOIN employee_potential ep ON ep.employee_id COLLATE utf8mb4_unicode_ci = e.employee_id COLLATE utf8mb4_unicode_ci\nWHERE e.department COLLATE utf8mb4_unicode_ci = p.department COLLATE utf8mb4_unicode_ci\n  AND e.performance_score >= 3\n  AND COALESCE(ep.potential_score, 0) >= 70\n  AND e.attrition_risk_score\
+              \ <= 60\nORDER BY e.performance_score DESC,\n         COALESCE(ep.potential_score, 0) DESC,\n         e.attrition_risk_score ASC,\n         e.tenure_years DESC\nLIMIT 10;"
         type: tool
       height: 168
       id: candidate_pool_query
-      position: {x: 700, y: 180}
-      positionAbsolute: {x: 700, y: 180}
+      position:
+        x: 700
+        y: 180
+      positionAbsolute:
+        x: 700
+        y: 180
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: contains
+            id: after-db-generate-condition
+            value: generate
+            varType: string
+            variable_selector:
+            - start_node
+            - mode
+          id: 'true'
+          logical_operator: and
+        selected: false
+        title: 数据库后输出类型
+        type: if-else
+      height: 147
+      id: promotion_after_db_router
+      position:
+        x: 1010
+        y: 180
+      positionAbsolute:
+        x: 1010
+        y: 180
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 不查询数据库，只基于当前建议正文、上下文和 planner 结果回答或修订。
+        memory:
+          enabled: false
+          role_prefix:
+            assistant: ''
+            user: ''
+          window:
+            enabled: false
+            size: 50
+        model:
+          completion_params: {}
+          mode: chat
+          name: deepseek-v4-flash
+          provider: langgenius/deepseek/deepseek
+        prompt_template:
+        - id: chat-no-db-system-prompt
+          role: system
+          text: '你是企业人才梯队与晋升决策专家。当前是晋升建议生成后的追问讨论阶段。
+
+
+            本节点不会查询数据库。你只能基于当前晋升建议正文、最近对话上下文、HR 规则、部门经理评价和 planner 的工具规划回答。
+
+
+            要求：
+
+            - 如果 planner 判断需要 ASK_USER，优先向用户提出一个清晰补充问题。
+
+            - 不要编造当前建议正文和上下文里没有的员工数据、绩效、潜力、岗位画像或候选人信息。
+
+            - 如果用户明确要求修改正文，并且不需要新事实数据，可以输出完整 UPDATED_REPORT。
+
+            - 如果只是解释、总结、措辞优化建议，UPDATED_REPORT 留空。
+
+            - 不要输出 <think>、隐藏推理链或内部思考过程。
+
+            - 需要输出一段给用户看的可见思考摘要，只说明判断依据、是否用了工具、是否会修改正文，不展开隐藏推理链。
+
+            - 严格输出 THINKING_SUMMARY、CHAT_REPLY 和 UPDATED_REPORT 三段。'
+        - id: chat-no-db-user-prompt
+          role: user
+          text: 'Planner 结果：
+
+            {{#promotion_tool_planner.text#}}
+
+
+            目标晋升岗位：{{#start_node.target_position#}}
+
+            发起人：{{#start_node.created_by#}}
+
+
+            HR 晋升规则：
+
+            {{#start_node.promotion_rule#}}
+
+
+            部门经理评价：
+
+            {{#start_node.manager_comment#}}
+
+
+            当前晋升建议正文：
+
+            {{#start_node.current_report#}}
+
+
+            最近对话上下文：
+
+            {{#start_node.conversation_context#}}
+
+
+            本轮追问：
+
+            {{#start_node.followup_question#}}
+
+
+            输出格式：
+
+            THINKING_SUMMARY:
+
+            <给用户看的简短思考摘要，1-3 句，不输出隐藏推理链>
+
+            CHAT_REPLY:
+
+            <给用户的简短回复>
+
+            UPDATED_REPORT:
+
+            <如需更新则写完整更新后的晋升建议正文，否则留空>'
+        retry_config:
+          enabled: false
+          exponential_backoff:
+            enabled: false
+            max_interval: 10000
+            multiplier: 2
+          max_retries: 1
+          retry_interval: 1000
+        selected: false
+        structured_output:
+          enabled: false
+        title: 无工具追问回复
+        type: llm
+        vision:
+          enabled: false
+      height: 132
+      id: promotion_chat_llm
+      position:
+        x: 1320
+        y: 520
+      positionAbsolute:
+        x: 1320
+        y: 520
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: 已按 planner 使用数据库工具；结合查询结果回答，但不强制生成新建议。
+        memory:
+          enabled: false
+          role_prefix:
+            assistant: ''
+            user: ''
+          window:
+            enabled: false
+            size: 50
+        model:
+          completion_params: {}
+          mode: chat
+          name: deepseek-v4-flash
+          provider: langgenius/deepseek/deepseek
+        prompt_template:
+        - id: chat-db-system-prompt
+          role: system
+          text: '你是企业人才梯队与晋升决策专家。当前是晋升建议生成后的追问讨论阶段，本轮已经按 planner 使用数据库工具。
+
+
+            要求：
+
+            - 使用数据库结果回答用户的事实问题、候选人对比、岗位画像、绩效/潜力/风险/培训问题。
+
+            - 查询数据库不等于必须更新晋升建议。只有 planner 的 TOOL_REVISE_REPORT 为 true，或用户明确要求修改正文、重新排序、纳入/移除候选人、重写结论时，才输出完整 UPDATED_REPORT。
+
+            - 如果只是事实回答或解释，UPDATED_REPORT 留空。
+
+            - 不要编造数据库和输入中没有的事实。
+
+            - 不要输出 <think>、隐藏推理链或内部思考过程。
+
+            - 需要输出一段给用户看的可见思考摘要，只说明判断依据、是否用了工具、是否会修改正文，不展开隐藏推理链。
+
+            - 严格输出 THINKING_SUMMARY、CHAT_REPLY 和 UPDATED_REPORT 三段。'
+        - id: chat-db-user-prompt
+          role: user
+          text: 'Planner 结果：
+
+            {{#promotion_tool_planner.text#}}
+
+
+            目标晋升岗位：{{#start_node.target_position#}}
+
+            发起人：{{#start_node.created_by#}}
+
+
+            HR 晋升规则：
+
+            {{#start_node.promotion_rule#}}
+
+
+            部门经理评价：
+
+            {{#start_node.manager_comment#}}
+
+
+            当前晋升建议正文：
+
+            {{#start_node.current_report#}}
+
+
+            最近对话上下文：
+
+            {{#start_node.conversation_context#}}
+
+
+            本轮追问：
+
+            {{#start_node.followup_question#}}
+
+
+            目标岗位要求查询结果：
+
+            {{#position_profile_query.text#}}
+
+
+            候选人池查询结果：
+
+            {{#candidate_pool_query.text#}}
+
+
+            输出格式：
+
+            THINKING_SUMMARY:
+
+            <给用户看的简短思考摘要，1-3 句，不输出隐藏推理链>
+
+            CHAT_REPLY:
+
+            <给用户的简短回复，说明使用了哪些事实依据>
+
+            UPDATED_REPORT:
+
+            <如需更新则写完整更新后的晋升建议正文，否则留空>'
+        retry_config:
+          enabled: false
+          exponential_backoff:
+            enabled: false
+            max_interval: 10000
+            multiplier: 2
+          max_retries: 1
+          retry_interval: 1000
+        selected: false
+        structured_output:
+          enabled: false
+        title: 数据库工具追问回复
+        type: llm
+        vision:
+          enabled: false
+      height: 132
+      id: promotion_chat_db_llm
+      position:
+        x: 1320
+        y: 300
+      positionAbsolute:
+        x: 1320
+        y: 300
       selected: false
       sourcePosition: right
       targetPosition: left
@@ -248,8 +862,12 @@ workflow:
         desc: 整合岗位画像、候选人池、HR 规则和部门经理评价，输出多候选人对比、推荐等级、风险提示和培养方案。
         memory:
           enabled: false
-          role_prefix: {assistant: '', user: ''}
-          window: {enabled: false, size: 50}
+          role_prefix:
+            assistant: ''
+            user: ''
+          window:
+            enabled: false
+            size: 50
         model:
           completion_params: {}
           mode: chat
@@ -258,72 +876,121 @@ workflow:
         prompt_template:
         - id: system-prompt
           role: system
-          text: |
-            你是企业人才梯队与晋升决策专家。你参与的是“晋升决策辅助 Agent”工作流。
+          text: '你是企业人才梯队与晋升决策专家。你参与的是“晋升决策辅助 Agent”工作流。
+
 
             流程要求：
+
             1. 候选人数据采集：HR 提供基础规则，部门经理提供岗位需求，系统从数据库读取岗位与候选人数据。
+
             2. 晋升标准配置：结合 position_profile 的硬性要求、HR 晋升规则、部门经理评价口径。
+
             3. 多候选人对比：横向比较能力、经验、潜力、培训、技能、流失风险和岗位匹配。
+
             4. 晋升建议生成：给出推荐等级、晋升建议、风险提示、培养计划。
+
             5. 审核与反馈：输出给 HR 和部门经理人工确认；你不能替代最终人事决定。
 
+
             数据字段含义：
+
             - employee_talent_data：员工基础信息、当前岗位、职级、绩效、潜力、技能、培训、流失风险、人才标签。
+
             - position_profile：目标岗位的部门、职级、核心技能、加分技能、必需培训、绩效/司龄/办公模式要求。
+
             - promotion_decision_records：后续用于保存决策记录；当前工作流只生成记录草案，不自动写库。
 
+
             评估原则：
+
             - 不要编造数据库和输入中没有的事实。
+
             - 如果岗位要求为空或候选人池为空，要明确指出数据不足，并给出 HR 下一步动作。
+
             - 不要只挑最高分，要解释为什么推荐、为什么暂缓、风险在哪里。
+
             - 建议等级只能从：立即晋升、进入观察名单、暂缓晋升、不建议晋升 中选择。
+
             - 继任梯队等级只能从：第一梯队、第二梯队、观察梯队、暂不纳入 中选择。
+
+            '
         - id: user-prompt
           role: user
-          text: |
-            目标晋升岗位：{{#start_node.target_position#}}
+          text: '目标晋升岗位：{{#start_node.target_position#}}
+
             发起人：{{#start_node.created_by#}}
 
+
             HR 晋升规则：
+
             {{#start_node.promotion_rule#}}
 
+
             部门经理评价：
+
             {{#start_node.manager_comment#}}
 
+
             目标岗位要求查询结果：
+
             {{#position_profile_query.text#}}
 
+
             候选人池查询结果：
+
             {{#candidate_pool_query.text#}}
+
 
             请严格输出以下结构：
 
+
             ## 1. 岗位标准确认
+
             - 目标岗位：
+
             - 所属部门：
+
             - 目标职级/职等：
+
             - 核心技能：
+
             - 必需培训：
+
             - 绩效/司龄/办公模式要求：
+
             - 本次人工补充规则：
 
+
             ## 2. 候选人横向对比
+
             用表格输出，列包括：排名、员工ID、姓名、当前岗位、当前职级、绩效、潜力、技能匹配、培训匹配、流失风险、主要优势、主要短板。
 
+
             ## 3. 晋升推荐结论
+
             对每个候选人输出：员工ID/姓名、匹配分0-100、建议等级、继任梯队、决策理由、风险提示、30/60/90天培养计划。
 
+
             ## 4. HR 与部门经理待确认事项
+
             - 需要 HR 补充：
+
             - 需要部门经理确认：
+
             - 不建议自动决策的点：
 
+
             ## 5. 决策记录草案
-            为“立即晋升”或“进入观察名单”的候选人生成可落库摘要，每条包含：candidate_employee_id、employee_name、target_position、match_score、recommendation、succession_level、decision_reason、risk_warning、development_plan、decision_status=draft。
+
+            为“立即晋升”或“进入观察名单”的候选人生成可落库摘要。请使用 ```json 代码块输出 JSON 数组，每条包含：candidate_employee_id、employee_name、target_position、match_score、recommendation、succession_level、decision_reason、risk_warning、development_plan、decision_status=draft。不要输出未加代码围栏的裸 JSON。
+
+            '
         retry_config:
           enabled: false
-          exponential_backoff: {enabled: false, max_interval: 10000, multiplier: 2}
+          exponential_backoff:
+            enabled: false
+            max_interval: 10000
+            multiplier: 2
           max_retries: 1
           retry_interval: 1000
         selected: false
@@ -335,8 +1002,12 @@ workflow:
           enabled: false
       height: 132
       id: promotion_llm
-      position: {x: 1010, y: 180}
-      positionAbsolute: {x: 1010, y: 180}
+      position:
+        x: 1010
+        y: 180
+      positionAbsolute:
+        x: 1010
+        y: 180
       selected: false
       sourcePosition: right
       targetPosition: left
@@ -345,13 +1016,19 @@ workflow:
     - data:
         desc: 输出岗位要求、候选人池原始查询结果和晋升建议报告，供 HR 和部门经理审核。
         outputs:
-        - value_selector: [promotion_llm, text]
+        - value_selector:
+          - promotion_llm
+          - text
           value_type: string
           variable: promotion_report
-        - value_selector: [position_profile_query, text]
+        - value_selector:
+          - position_profile_query
+          - text
           value_type: string
           variable: position_profile_raw
-        - value_selector: [candidate_pool_query, text]
+        - value_selector:
+          - candidate_pool_query
+          - text
           value_type: string
           variable: candidate_pool_raw
         selected: false
@@ -359,14 +1036,77 @@ workflow:
         type: end
       height: 142
       id: end_node
-      position: {x: 1320, y: 180}
-      positionAbsolute: {x: 1320, y: 180}
+      position:
+        x: 1320
+        y: 180
+      positionAbsolute:
+        x: 1320
+        y: 180
       selected: false
       sourcePosition: right
       targetPosition: left
       type: custom
       width: 244
-    viewport: {x: 0, y: 80, zoom: 0.75}
+    - data:
+        desc: 输出追问回复和可选的更新正文。
+        outputs:
+        - value_selector:
+          - promotion_chat_llm
+          - text
+          value_type: string
+          variable: promotion_report
+        selected: false
+        title: 输出追问结果
+        type: end
+      height: 87
+      id: chat_end_node
+      position:
+        x: 1630
+        y: 520
+      positionAbsolute:
+        x: 1630
+        y: 520
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: 输出数据库工具追问回复和可选的更新正文。
+        outputs:
+        - value_selector:
+          - promotion_chat_db_llm
+          - text
+          value_type: string
+          variable: promotion_report
+        - value_selector:
+          - position_profile_query
+          - text
+          value_type: string
+          variable: position_profile_raw
+        - value_selector:
+          - candidate_pool_query
+          - text
+          value_type: string
+          variable: candidate_pool_raw
+        selected: false
+        title: 输出数据库追问结果
+        type: end
+      height: 142
+      id: chat_db_end_node
+      position:
+        x: 1630
+        y: 300
+      positionAbsolute:
+        x: 1630
+        y: 300
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: -40
+      y: 40
+      zoom: 0.65
   rag_pipeline_variables: []
-
-

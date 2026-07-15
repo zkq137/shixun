@@ -1,4 +1,5 @@
 ﻿import os
+import re
 import uuid
 import time
 from pathlib import Path
@@ -125,15 +126,22 @@ def _get_succession_dify_settings():
     }
 
 
+def _strip_model_private_thought(value):
+    text = str(value or "")
+    text = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.S | re.I)
+    text = re.sub(r"</?think>\s*", "", text, flags=re.I)
+    return text.strip()
+
+
 def _normalize_succession_workflow_response(body):
     data = body.get("data") if isinstance(body, dict) else {}
     outputs = data.get("outputs") if isinstance(data, dict) else {}
     if not outputs and isinstance(body, dict):
         outputs = body.get("outputs") or {}
 
-    promotion_report = outputs.get("promotion_report")
+    promotion_report = _strip_model_private_thought(outputs.get("promotion_report"))
     if promotion_report in (None, ""):
-        promotion_report = outputs.get("text") or outputs.get("answer") or outputs.get("result") or ""
+        promotion_report = _strip_model_private_thought(outputs.get("text") or outputs.get("answer") or outputs.get("result") or "")
 
     error = ""
     if isinstance(data, dict):
@@ -141,15 +149,21 @@ def _normalize_succession_workflow_response(body):
     if not error and isinstance(body, dict):
         error = body.get("error") or ""
 
+    cleaned_outputs = dict(outputs)
+    for key in ("promotion_report", "chat_reply", "assistant_message", "updated_report", "revised_report", "text", "answer", "result"):
+        if key in cleaned_outputs:
+            cleaned_outputs[key] = _strip_model_private_thought(cleaned_outputs[key])
     return {
         "workflow_run_id": body.get("workflow_run_id") or (data or {}).get("id") or "",
         "task_id": body.get("task_id") or (data or {}).get("task_id") or "",
         "status": (data or {}).get("status") or body.get("status") or "unknown",
         "error": error,
         "promotion_report": promotion_report,
+        "chat_reply": cleaned_outputs.get("chat_reply") or cleaned_outputs.get("assistant_message") or "",
+        "updated_report": cleaned_outputs.get("updated_report") or cleaned_outputs.get("revised_report") or "",
         "position_profile_raw": outputs.get("position_profile_raw") or "",
         "candidate_pool_raw": outputs.get("candidate_pool_raw") or "",
-        "outputs": outputs,
+        "outputs": cleaned_outputs,
         "raw": body,
     }
 
@@ -203,6 +217,82 @@ def _call_dify_workflow(settings, inputs, user="admin"):
 
     return _normalize_succession_workflow_response(body)
 
+
+DIFY_MANAGER_COMMENT_LIMIT = 3800
+PROMOTION_CONTEXT_LIMIT = 900
+PROMOTION_CHAT_ITEM_LIMIT = 360
+PROMOTION_REPORT_LIMIT = 12000
+PROMOTION_QUESTION_LIMIT = 1200
+def _clip_text(value, limit):
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "\n（内容过长，已截断）"
+
+
+def _compact_chat_content(value):
+    return _clip_text(" ".join(str(value or "").split()), PROMOTION_CHAT_ITEM_LIMIT)
+
+
+def _build_promotion_manager_comment(manager_comment, query="", context=""):
+    parts = [
+        _clip_text(manager_comment, 1800),
+        f"本轮问题：{_clip_text(query, 500)}" if query else "",
+        f"最近对话上下文：\n{_clip_text(context, PROMOTION_CONTEXT_LIMIT)}" if context else "",
+    ]
+    text = "\n\n".join(part for part in parts if part)
+    return _clip_text(text, DIFY_MANAGER_COMMENT_LIMIT)
+
+
+def _split_promotion_chat_package(text):
+    raw = _strip_model_private_thought(text)
+    if not raw:
+        return "", "", ""
+    thinking_match = re.search(r"THINKING_SUMMARY:\s*(.*?)(?:\nCHAT_REPLY:|\nUPDATED_REPORT:|\Z)", raw, re.S)
+    reply_match = re.search(r"CHAT_REPLY:\s*(.*?)(?:\nUPDATED_REPORT:|\Z)", raw, re.S)
+    report_match = re.search(r"UPDATED_REPORT:\s*(.*)\Z", raw, re.S)
+    thinking = thinking_match.group(1).strip() if thinking_match else ""
+    fallback = re.sub(r"THINKING_SUMMARY:\s*.*?(?:\nCHAT_REPLY:|\Z)", "", raw, flags=re.S)
+    fallback = re.sub(r"UPDATED_REPORT:\s*.*\Z", "", fallback, flags=re.S).strip()
+    reply = reply_match.group(1).strip() if reply_match else fallback
+    report = report_match.group(1).strip() if report_match else ""
+    return thinking, reply, report
+
+
+def _build_promotion_inputs(data, conversation_context=""):
+    mode = (data.get("mode") or "generate").strip().lower()
+    if mode not in {"generate", "chat"}:
+        mode = "chat" if (data.get("followup_question") or data.get("query")) else "generate"
+
+    target_position = (data.get("target_position") or "").strip()
+    promotion_rule = (data.get("promotion_rule") or "").strip()
+    manager_comment = (data.get("manager_comment") or "").strip()
+    created_by = (data.get("created_by") or "HR").strip() or "HR"
+    followup_question = (data.get("followup_question") or data.get("query") or "").strip()
+    current_report = (data.get("current_report") or "").strip()
+
+    inputs = {
+        "mode": mode,
+        "target_position": target_position,
+        "promotion_rule": promotion_rule,
+        "manager_comment": _clip_text(manager_comment, 2400),
+        "created_by": created_by,
+        "current_report": _clip_text(current_report, PROMOTION_REPORT_LIMIT),
+        "followup_question": _clip_text(followup_question, PROMOTION_QUESTION_LIMIT),
+        "conversation_context": _clip_text(conversation_context, PROMOTION_CONTEXT_LIMIT),
+    }
+    return mode, created_by, inputs
+
+
+def _get_promotion_session(conversation_id, target_position=""):
+    session = promotion_agent_sessions.get(conversation_id)
+    if not isinstance(session, dict):
+        session = {"messages": [], "current_report": "", "target_position": target_position or ""}
+        promotion_agent_sessions[conversation_id] = session
+    session.setdefault("messages", [])
+    session.setdefault("current_report", "")
+    session.setdefault("target_position", target_position or "")
+    return session
 
 def _call_succession_workflow(inputs, user="admin"):
     return _call_dify_workflow(_get_succession_dify_settings(), inputs, user)
@@ -398,35 +488,28 @@ def promotion_agent_positions():
 def promotion_agent_workflow():
     """Blocking call for the standalone promotion decision assistant."""
     data = request.get_json() or {}
-    target_position = (data.get("target_position") or "").strip()
-    promotion_rule = (data.get("promotion_rule") or "").strip()
-    manager_comment = (data.get("manager_comment") or "").strip()
-    created_by = (data.get("created_by") or "HR").strip() or "HR"
-    query = (data.get("query") or "").strip()
-    context = (data.get("conversation_context") or "").strip()
+    conversation_context = (data.get("conversation_context") or "").strip()
+    mode, created_by, inputs = _build_promotion_inputs(data, conversation_context=conversation_context)
 
-    if not target_position:
+    if not inputs["target_position"]:
         return jsonify({"error": "Please fill in target_position"}), 400
-
-    extended_comment = manager_comment
-    if query or context:
-        extended_comment = "\n\n".join(
-            part for part in [
-                manager_comment,
-                f"本轮问题：{query}" if query else "",
-                f"最近对话上下文：\n{context}" if context else "",
-            ] if part
-        )
-
-    inputs = {
-        "target_position": target_position,
-        "promotion_rule": promotion_rule,
-        "manager_comment": extended_comment,
-        "created_by": created_by,
-    }
+    if mode == "chat" and not inputs["followup_question"]:
+        return jsonify({"error": "请填写追问内容"}), 400
 
     try:
-        return jsonify(_call_promotion_workflow(inputs, user=created_by))
+    result = _call_promotion_workflow(inputs, user=created_by)
+    package_source = result.get("chat_reply") or result.get("promotion_report") or ""
+    parsed_thinking, parsed_reply, parsed_report = _split_promotion_chat_package(package_source)
+    if parsed_thinking:
+        result["thinking_summary"] = parsed_thinking
+    if parsed_reply and parsed_reply != package_source:
+        result["chat_reply"] = parsed_reply
+    if parsed_report:
+        result["updated_report"] = result.get("updated_report") or parsed_report
+        result["promotion_report"] = parsed_report
+    elif result.get("updated_report") and not result.get("promotion_report"):
+        result["promotion_report"] = result["updated_report"]
+    return jsonify(result)
     except HTTPError as exc:
         try:
             detail = exc.read().decode("utf-8", errors="replace")
@@ -439,70 +522,63 @@ def promotion_agent_workflow():
         return jsonify({"error": f"Dify workflow request failed: {str(exc)}"}), 502
 
 
+@app.post("/api/promotion-agent/chat/stream")
 @app.post("/api/promotion-agent/stream")
 def promotion_agent_stream():
     """SSE wrapper for the standalone promotion decision assistant."""
     data = request.get_json() or {}
-    target_position = (data.get("target_position") or "").strip()
-    promotion_rule = (data.get("promotion_rule") or "").strip()
-    manager_comment = (data.get("manager_comment") or "").strip()
-    created_by = (data.get("created_by") or "HR").strip() or "HR"
-    query = (data.get("query") or "").strip()
-    context = (data.get("conversation_context") or "").strip()
     conversation_id = (data.get("conversation_id") or "").strip() or uuid.uuid4().hex
+    session = _get_promotion_session(conversation_id, (data.get("target_position") or "").strip())
 
-    if not target_position:
-        return jsonify({"error": "Please fill in target_position"}), 400
-    if not query:
-        return jsonify({"error": "?? query ??"}), 400
-
-    session = promotion_agent_sessions.setdefault(conversation_id, [])
-    session.append({"role": "user", "content": query})
+    recent_context = (data.get("conversation_context") or "").strip()
     session_context = "\n".join(
-        f"{'用户' if item.get('role') == 'user' else '助手'}: {item.get('content', '')}"
-        for item in session[-8:]
+        f"{'用户' if item.get('role') == 'user' else '助手'}: {_compact_chat_content(item.get('content', ''))}"
+        for item in session["messages"][-8:]
     )
-    merged_context = "\n".join(part for part in [context, session_context] if part)
-    extended_comment = "\n\n".join(
-        part for part in [
-            manager_comment,
-            f"本轮问题：{query}",
-            f"最近对话上下文：\n{merged_context}" if merged_context else "",
-        ] if part
-    )
-    inputs = {
-        "target_position": target_position,
-        "promotion_rule": promotion_rule,
-        "manager_comment": extended_comment,
-        "created_by": created_by,
-    }
+    merged_context = "\n".join(part for part in [_clip_text(recent_context, PROMOTION_CONTEXT_LIMIT), session_context] if part)
+    data["conversation_context"] = merged_context
+
+    mode, created_by, inputs = _build_promotion_inputs(data, conversation_context=merged_context)
+    if not inputs["target_position"]:
+        inputs["target_position"] = session.get("target_position", "")
+    if not inputs["target_position"]:
+        return jsonify({"error": "Please fill in target_position"}), 400
+    if mode == "chat" and not inputs["followup_question"]:
+        return jsonify({"error": "请填写追问内容"}), 400
+
+    session["target_position"] = inputs["target_position"]
+    if inputs.get("current_report"):
+        session["current_report"] = inputs["current_report"]
+    elif session.get("current_report") and mode == "chat":
+        inputs["current_report"] = session["current_report"]
 
     def sse(event, payload):
         return f"event: {event}\ndata: {_json.dumps(payload, ensure_ascii=False)}\n\n"
 
+    def stream_text(text, chunk_size=18):
+        content = str(text or "")
+        for index in range(0, len(content), chunk_size):
+            yield sse("delta", {"delta": content[index:index + chunk_size]})
+
     def generate():
+        run_started_at = time.time()
         yield sse("session", {"conversation_id": conversation_id})
-        yield sse("progress", {"message": "已接收问题，正在调用晋升决策工作流..."})
+
+        if mode == "generate":
+            yield sse("status", {"message": "已接收生成请求，正在生成晋升正文..."})
+        else:
+            yield sse("status", {"message": "已接收追问，正在判断是否需要查询数据库..."})
         settings = _get_promotion_dify_settings()
+
         if not settings["api_key"]:
             yield sse("error", {"error": "DIFY_PROMOTION_API_KEY is not configured in local .env"})
             return
 
-        payload = _json.dumps(
-            {"inputs": inputs, "response_mode": "streaming", "user": created_by},
-            ensure_ascii=False,
-        ).encode("utf-8")
-        req = Request(
-            settings["workflow_url"],
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {settings['api_key']}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
+        payload = _json.dumps({"inputs": inputs, "response_mode": "streaming", "user": created_by}, ensure_ascii=False).encode("utf-8")
+        req = Request(settings["workflow_url"], data=payload, headers={"Authorization": f"Bearer {settings['api_key']}", "Content-Type": "application/json"}, method="POST")
 
         final_body = None
+        streamed_any_text = False
         try:
             with urlopen(req, timeout=300) as resp:
                 for raw_line in resp:
@@ -518,20 +594,55 @@ def promotion_agent_stream():
                         continue
                     event_name = chunk.get("event") or "message"
                     if event_name == "workflow_started":
-                        yield sse("progress", {"message": "工作流已启动，正在读取岗位画像和候选人池..."})
+                        yield sse("status", {"message": "工作流已启动，正在处理请求..."})
                     elif event_name in {"node_started", "node_finished"}:
                         title = (chunk.get("data") or {}).get("title") or "分析节点"
-                        yield sse("progress", {"message": f"{title} 已处理"})
+                        yield sse("status", {"message": title})
                     elif event_name in {"text_chunk", "message"}:
                         text_delta = chunk.get("answer") or chunk.get("text") or chunk.get("delta") or ""
                         if text_delta:
-                            yield sse("token", {"text": text_delta})
+                            streamed_any_text = True
+                            yield sse("delta", {"delta": text_delta})
                     elif event_name == "workflow_finished":
                         final_body = chunk
 
             result = _normalize_succession_workflow_response(final_body or {})
-            if result.get("promotion_report"):
-                session.append({"role": "assistant", "content": result["promotion_report"]})
+            if mode == "generate":
+                report = result.get("promotion_report") or ""
+                if report:
+                    session["current_report"] = report
+                if report and not streamed_any_text:
+                    yield from stream_text(report, chunk_size=28)
+                    streamed_any_text = True
+                session["messages"].append({"role": "assistant", "content": _compact_chat_content(report or "已生成晋升正文")})
+                yield sse("status", {"message": "生成完成，正文已更新"})
+            else:
+                package_text = result.get("chat_reply") or result.get("promotion_report") or ""
+                thinking_summary, reply, updated_report = _split_promotion_chat_package(package_text)
+                if thinking_summary:
+                    result["thinking_summary"] = thinking_summary
+                if reply:
+                    result["chat_reply"] = reply
+                if updated_report:
+                    result["updated_report"] = updated_report
+                    result["promotion_report"] = result.get("promotion_report") or updated_report
+                    session["current_report"] = updated_report
+                elif result.get("updated_report"):
+                    session["current_report"] = result["updated_report"]
+                if package_text and not streamed_any_text:
+                    yield from stream_text(package_text, chunk_size=18)
+                    streamed_any_text = True
+                session["messages"].append({"role": "assistant", "content": _compact_chat_content(reply or result.get("promotion_report") or "已完成本轮追问")})
+                yield sse("status", {"message": "本轮追问完成"})
+
+            if mode == "generate" and result.get("promotion_report"):
+                result["updated_report"] = result.get("updated_report") or result["promotion_report"]
+            result["elapsed_ms"] = int((time.time() - run_started_at) * 1000)
+            result["tool_usage"] = {
+                "database": bool(result.get("position_profile_raw") or result.get("candidate_pool_raw")),
+                "revise_report": bool(result.get("updated_report") and mode == "chat"),
+                "ask_user": False,
+            }
             yield sse("done", result)
         except HTTPError as exc:
             try:
@@ -544,11 +655,8 @@ def promotion_agent_stream():
         except Exception as exc:
             yield sse("error", {"error": f"Dify workflow request failed: {str(exc)}"})
 
-    return Response(
-        stream_with_context(generate()),
-        mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    return Response(stream_with_context(generate()), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
 
 @app.get("/api/training-plans")
 def training_plans():
@@ -628,7 +736,6 @@ def employee_query(employee_no):
 
 
 # ── 二维码登录 API ──────────────────────────────────────
-
 
 @app.post("/api/auth/qrcode")
 def auth_qrcode():
@@ -1052,6 +1159,13 @@ def face_user_delete():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
+
+
+
+
+
+
 
 
 
